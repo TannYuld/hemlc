@@ -43,27 +43,29 @@ HEML also have isolated component system which can be imported to any heml file.
 #### Basic Reactivity
 ```html
 <!-- heml file -->
-<var name="myVar" value="5">
-Static value: <value name="myVar" fixed>
-<br/>
-Reactive value: <value name="myVar">
-<br/>
+<var name="myVar" value="{5}" />
+Static value: <value name="{myVar}" fixed />
+<br />
+Reactive value: <value name="{myVar}" />
+<br />
 <button onclick="myVar.value += 1;">+1</button>
 ```
 `value` attribute is optional, thus if it isn't given variable start as js `undefined` to its life.
 
 As you can see above in the example, to edit the value of observable object you need to use `value` field.
 
-If `static` attribute is passed to any `<value>` tag, only the compile time value of any given variable is passed.
+If `static` attribute is passed to any `<value>` tag, only pass the given value once at the exact moment of render, there is no reactiviy by observing.
 
 ```html
 <!-- heml file -->
-<var name="person" value="{title='Mr' name='Hyde'}" />
-Hello world, this is <value name="person.title"/> <value name="person.name" />.
-<br/>
-<button 
-onclick="person.title='Dr';person.name='Jekyll';">
-Change Persona
+<var name="person" value="{{title:'Mr', name:'Hyde'}}" />
+Hello world, this is <value name="{person.title}" />. <value name="{person.name}" />!
+<br />
+<button onclick="
+    person.value.title = person.value.title === 'Dr' ? 'Mr' : 'Dr';
+    person.value.name = person.value.name === 'Jekyll' ? 'Hyde' : 'Jekyll';
+">
+    Change Persona
 </button>
 ```
 Js objects (or array's) can also be used as observable variable. To change their fields you don't need to use `value` field specifically.
@@ -94,7 +96,7 @@ This is how a component file and heml doc which uses that looks like:
     </head>
     <body>
         Below are the two distinct, isolated block-scoped component instances.
-        <comp val="{3}" defaultVal="Hey!" />
+        <comp val="{3}" optionalVal="Hey!" />
         <comp val="{5}" />
     </body>
 </html>
@@ -113,6 +115,7 @@ Any passed childeren can be passed via `<children/>` tag in an component.
     Hello, <children/>.
     <br/>
     This is component FOO.
+    <br/>
     <Bar/>
 </component>
 
