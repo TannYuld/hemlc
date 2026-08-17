@@ -164,3 +164,11 @@ Component files doesn't need to be compiled, they will be automaticly resolved d
 hemlc --update
 ```
 Can be used to update the compiler.
+
+#### Roadmap
+- Conditional rendering blocks `<if>`, `<else>`, `<elseif>`.
+- Iterative rendering with `<for>` block.
+- Pattern matching with `<match>` and `<arm>` tags.
+- Context control with `<data>` and `<key>`.
+- VSCode linter and codesuggetsions.
+- Better compiler error handling.
