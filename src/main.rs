@@ -387,3 +387,14 @@ fn main() -> ExitCode {
         ExitCode::FAILURE
     }
 }
+
+
+/*  TODO: Make this changes happen!!!  
+    - Improve --watch command:
+        - It should start to listen new created files inside a folder while already watching.
+        - It should auto compile everything when any component is changed.
+    - Improve heml component structure:
+        - Add a `<meta>` (name subject to change) to being able to put style and script tags, or not (this one is subject to decide weather or not to implement...)
+    - Improve heml file structure:
+        - Force for `.heml` file format by compiler level.
+*/

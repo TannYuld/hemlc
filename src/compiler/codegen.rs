@@ -34,24 +34,14 @@ impl JsBufferBuilder {
         }
     }
 
-    fn add_var(&mut self, var: &str, defualt_val: Option<String>) {
-        self.var_zone += format!(
-            "const {}=Observable({});",
-            var,
-            if let Some(val) = defualt_val {
-                val
-            } else {
-                String::new()
-            }
-        )
-        .as_str();
-    }
+    fn add_var(&mut self, var: &str, default_val: Option<String>) {
+        let val_expr = if let Some(val) = default_val {
+            parse_js_expr(&val)
+        } else {
+            "undefined".to_string()
+        };
 
-    fn add_var_binding(&mut self, obfuscated_marker: &ObfuscatedExpr, var_name: &str) {
-        self.binding_zone += &format!(
-            "const marker__{0}=FindMarker(\"{0}\",frag);BindValue(marker__{0},{1});",
-            obfuscated_marker.0, var_name
-        );
+        self.var_zone += format!("const {}=Observable({});", var, val_expr).as_str();
     }
 
     fn build(&self) -> String {
@@ -250,18 +240,38 @@ impl Compiler {
                 // self.buffer.html += format!("<!--{}-->", comment).as_str()
             }
             NodeKind::Value { name, fixed } => {
+                if !name.starts_with('{') || !name.ends_with('}') {
+                    return Err(CompileError::plain(
+                        format!("Invalid value name `{}`. Variables must be wrapped in curly braces. Did you mean `{{{}}}`?", name, name)
+                    ));
+                }
+                
                 let obfuscated_var = ObfuscatedExpr::new();
-                if *fixed {
-                    if let Some(var) = edoc.vars.get(name)
-                        && let Some(var_val) = var
-                    {
-                        self.buffer.html += var_val;
-                    }
+
+                let clean_name = if name.starts_with('{') && name.ends_with('}') {
+                    &name[1..name.len() - 1]
                 } else {
-                    self.buffer.html += obfuscated_var.generate_marker().as_str();
-                    self.buffer
-                        .js
-                        .add_var_binding(&obfuscated_var, name.as_str());
+                    name.as_str()
+                };
+
+                let end_of_base = clean_name
+                    .find(|c| c == '.' || c == '[')
+                    .unwrap_or(clean_name.len());
+                let base_var = &clean_name[..end_of_base];
+                let remainder = &clean_name[end_of_base..];
+
+                self.buffer.html += obfuscated_var.generate_marker().as_str();
+
+                if *fixed {
+                    self.buffer.js.binding_zone += &format!(
+                        "const marker__{0}=FindMarker(\"{0}\",frag);marker__{0}.after(document.createTextNode({1}.value{2}));",
+                        obfuscated_var.0, base_var, remainder
+                    );
+                } else {
+                    self.buffer.js.binding_zone += &format!(
+                        "const marker__{0}=FindMarker(\"{0}\",frag);BindValue(marker__{0},{1},()=>({1}.value{2}));",
+                        obfuscated_var.0, base_var, remainder
+                    );
                 }
             }
             NodeKind::Unknown {
@@ -329,6 +339,16 @@ impl Compiler {
                     let mut slot_compiler = Compiler::new();
                     slot_compiler.traverse_nodes(edoc, children)?;
 
+                    let mut props_js = String::from("{");
+                    for (key, val) in attrs.iter() {
+                        if let Some(v) = val {
+                            props_js.push_str(&format!("{}:{},", key, parse_js_expr(v)));
+                        } else {
+                            props_js.push_str(&format!("{}:true,", key));
+                        }
+                    }
+                    props_js.push('}');
+
                     let minified_slot_html = slot_compiler.buffer.html.trim().replace("> <", "><");
 
                     self.buffer.js.binding_zone += &format!(
@@ -338,7 +358,7 @@ impl Compiler {
                         minified_slot_html,
                         slot_compiler.buffer.js.binding_zone,
                         func_name,
-                        attrs.to_json()
+                        props_js
                     );
                 } else {
                     return Err(CompileError::plain(format!("Unkown tag `{}`", tag)));
@@ -405,4 +425,17 @@ fn minify_text(text: &str) -> String {
     }
 
     minified
+}
+
+fn parse_js_expr(val: &str) -> String {
+    if val.starts_with('{') && val.ends_with('}') {
+        // RULES 2, 3, 4: It's an expression! Strip the outer braces.
+        // "{myVar}" -> "myVar"
+        // "{{obj:'val'}}" -> "{obj:'val'}"
+        val[1..val.len() - 1].to_string()
+    } else {
+        // RULE 1: No braces? It's a static string! Wrap it safely in backticks.
+        // "kaka" -> "`kaka`"
+        format!("`{}`", val)
+    }
 }

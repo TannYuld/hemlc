@@ -77,24 +77,6 @@ impl Attrs {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-
-    pub fn to_json(&self) -> String {
-        let mut result = String::from("{");
-        for (key, val) in self.0.iter() {
-            if let Some(v) = val {
-                if v.starts_with('{') && v.ends_with('}') {
-                    let expr = &v[1..v.len() - 1];
-                    result.push_str(&format!("{}: {}, ", key, expr));
-                } else {
-                    result.push_str(&format!("{}: `{}`, ", key, v));
-                }
-            } else {
-                result.push_str(&format!("{}: true, ", key));
-            }
-        }
-        result.push_str("}");
-        result
-    }
 }
 
 impl FromIterator<Attr> for Attrs {
