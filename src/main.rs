@@ -257,7 +257,11 @@ fn watch_files(cli: &Cli, is_multi_file: bool) -> notify::Result<()> {
                                 }
                             } else {
                                 if !cli.quiet {
-                                    println!("\n[Watch] {} File(s) changed: {}", file_count, path.display());
+                                    println!(
+                                        "\n[Watch] {} File(s) changed: {}",
+                                        file_count,
+                                        path.display()
+                                    );
                                 }
                                 process_file(&path, cli, is_multi_file);
                             }
@@ -277,44 +281,67 @@ fn watch_files(cli: &Cli, is_multi_file: bool) -> notify::Result<()> {
 }
 
 fn update_self() -> ExitCode {
-    let update = || -> Result<(), Box<dyn std::error::Error>> {
+    let update = || -> Result<bool, Box<dyn std::error::Error>> {
         let releases = self_update::backends::github::ReleaseList::configure()
             .repo_owner("tannyuld")
             .repo_name("hemlc")
             .build()?
             .fetch()?;
-    
+
+        if releases.is_empty() {
+            return Err("No releases found on GitHub.".into());
+        }
+
+        let latest_release = &releases[0];
+        let current_version = env!("CARGO_PKG_VERSION");
+
+        let is_newer =
+            self_update::version::bump_is_greater(current_version, &latest_release.version)
+                .unwrap_or(false);
+
+        if !is_newer {
+            return Ok(false);
+        }
+
         let asset = releases[0]
             .asset_for(&self_update::get_target(), None)
             .unwrap();
+
         let tmp_dir = tempfile::Builder::new()
-                .prefix("hemlc_update")
-                .tempdir_in(::std::env::current_dir()?)?;
+            .prefix("hemlc_update")
+            .tempdir_in(::std::env::current_dir()?)?;
+
         let tmp_tarball_path = tmp_dir.path().join(&asset.name);
-        let tmp_tarball = ::std::fs::File::open(&tmp_tarball_path)?;
-    
+        let tmp_tarball = ::std::fs::File::create(&tmp_tarball_path)?;
+
         self_update::Download::from_url(&asset.download_url)
             .set_header(reqwest::header::ACCEPT, "application/octet-stream".parse()?)
             .download_to(&tmp_tarball)?;
-    
-        let bin_name = std::path::PathBuf::from("self_update_bin");
+
+        let bin_name = std::path::PathBuf::from("bin");
         self_update::Extract::from_source(&tmp_tarball_path)
-            .archive(self_update::ArchiveKind::Tar(Some(self_update::Compression::Gz)))
+            .archive(self_update::ArchiveKind::Tar(Some(
+                self_update::Compression::Gz,
+            )))
             .extract_file(&tmp_dir.path(), &bin_name)?;
-    
+
         let new_exe = tmp_dir.path().join(bin_name);
         self_replace::self_replace(new_exe)?;
 
-        Ok(())
+        Ok(true)
     };
 
     match update() {
-        Ok(_) => {
-            println!("Succesfully updated to new version.");
+        Ok(true) => {
+            println!("Successfully updated to new version.");
             ExitCode::SUCCESS   
         },
+        Ok(false) => {
+            println!("hemlc is already up to date (v{}).", env!("CARGO_PKG_VERSION"));
+            ExitCode::SUCCESS
+        },
         Err(e) => {
-            println!("Failed to update to new version: {}", e);
+            eprintln!("Failed to update: {}", e);
             ExitCode::FAILURE
         },
     }
@@ -325,7 +352,6 @@ fn main() -> ExitCode {
     if cli.update {
         return update_self();
     }
-
 
     let mut all_success = true;
 
