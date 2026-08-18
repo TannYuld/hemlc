@@ -42,6 +42,9 @@ struct Cli {
     #[arg(short, long)]
     minify: Option<usize>,
 
+    #[arg(short, long)]
+    flatten: bool,
+
     #[arg(long, exclusive = true)]
     update: bool,
 
@@ -70,7 +73,20 @@ fn is_component_file(source: &str) -> bool {
     false
 }
 
-fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
+fn collect_dir_recursive(dir: &Path, base: &Path, files: &mut Vec<(PathBuf, PathBuf)>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.filter_map(std::result::Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_dir_recursive(&path, base, files);
+            } else if path.extension().map_or(false, |ext| ext == "heml") {
+                files.push((path, base.to_path_buf()));
+            }
+        }
+    }
+}
+
+fn collect_files(inputs: &[String], quiet: bool) -> Vec<(PathBuf, PathBuf)> {
     let mut files = Vec::new();
 
     for input in inputs {
@@ -82,7 +98,8 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
 
         if path.is_file() {
             if path.extension().map_or(false, |ext| ext == "heml") {
-                files.push(path.to_path_buf());
+                let base = path.parent().unwrap_or(Path::new("")).to_path_buf();
+                files.push((path.clone(), base));
             } else if !quiet {
                 eprintln!(
                     "Input file '{}' must have a .heml extension.",
@@ -90,25 +107,7 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
                 );
             }
         } else if path.is_dir() {
-            match fs::read_dir(path) {
-                Ok(entries) => {
-                    for entry in entries.filter_map(std::result::Result::ok) {
-                        let entry_path = entry.path();
-
-                        let is_target_file = entry_path.is_file()
-                            && entry_path.extension().map_or(false, |ext| ext == "heml");
-
-                        if is_target_file {
-                            files.push(entry_path);
-                        }
-                    }
-                }
-                Err(e) => {
-                    if !quiet {
-                        eprintln!("Failed to read directory '{}': {}", input, e);
-                    }
-                }
-            }
+            collect_dir_recursive(&path, &path, &mut files);
         } else {
             if !quiet {
                 eprintln!("Path not found or inaccessible: {}", input);
@@ -121,6 +120,7 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
 
 fn process_file(
     file_path: &Path,
+    base_path: &Path,
     cli: &Cli,
     is_multi_file: bool,
     options: &CompilerOptions,
@@ -196,15 +196,26 @@ fn process_file(
             is_multi_file || out.ends_with('/') || out.ends_with('\\') || out_p.is_dir();
 
         if is_dir_output {
-            if let Err(e) = fs::create_dir_all(&out_p) {
-                if !cli.quiet {
-                    eprintln!("Failed to create output directory {:?}: {}", out_p, e);
+            let relative_path = if cli.flatten {
+                PathBuf::from(file_path.file_name().unwrap())
+            } else {
+                file_path
+                    .strip_prefix(base_path)
+                    .unwrap_or_else(|_| Path::new(file_path.file_name().unwrap()))
+                    .to_path_buf()
+            };
+
+            let full_out_path = out_p.join(relative_path).with_extension("html");
+            if let Some(parent) = full_out_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    if !cli.quiet {
+                        eprintln!("Failed to create output directory {:?}: {}", parent, e);
+                    }
+                    return false;
                 }
-                return false;
             }
 
-            let file_name = file_path.file_name().unwrap();
-            out_p.join(file_name).with_extension("html")
+            full_out_path
         } else {
             if out_p.extension().map_or(false, |ext| ext == "html") {
                 if let Some(parent) = out_p.parent() {
@@ -257,58 +268,114 @@ fn watch_files(
     let (tx, rx) = channel();
     let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
 
-    let file_count = cli.inputs.len();
-
     for input in &cli.inputs {
-        let path = Path::new(input);
-        watcher.watch(path, RecursiveMode::NonRecursive)?;
+        let mut path = PathBuf::from(input);
+        if path.extension().is_none() && !path.is_dir() {
+            path.set_extension("heml");
+        }
+        let watch_target = if path.is_file() {
+            let parent = path.parent().unwrap_or(Path::new(""));
+            if parent.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                parent
+            }
+        } else {
+            path.as_path()
+        };
+
+        watcher.watch(watch_target, RecursiveMode::Recursive)?;
     }
 
     if !cli.quiet {
         println!("Watching for changes... (Press Ctrl+C to stop)");
     }
 
-    for res in rx {
-        match res {
-            Ok(Event { kind, paths, .. }) => {
-                if kind.is_modify() || kind.is_create() {
-                    for path in paths {
-                        if path.extension().map_or(false, |ext| ext == "heml") {
-                            let source = fs::read_to_string(&path).unwrap_or_default();
+    loop {
+        match rx.recv() {
+            Ok(Ok(Event { kind, paths, .. })) => {
+                if !(kind.is_modify() || kind.is_create()) {
+                    continue;
+                }
 
-                            if is_component_file(&source) {
-                                if !cli.quiet {
-                                    println!(
-                                        "\n[Watch] Component '{}' changed. Rebuilding all files...",
-                                        path.display()
-                                    );
-                                }
+                let mut changed_paths = std::collections::HashSet::new();
+                for p in paths {
+                    if p.extension().map_or(false, |ext| ext == "heml") {
+                        changed_paths.insert(p);
+                    }
+                }
 
-                                let fresh_files = collect_files(&cli.inputs, true);
+                if changed_paths.is_empty() {
+                    continue;
+                }
 
-                                let current_is_multi = fresh_files.len() > 1;
-
-                                for file in &fresh_files {
-                                    process_file(file, cli, current_is_multi, compiler_options);
-                                }
-                            } else {
-                                if !cli.quiet {
-                                    println!(
-                                        "\n[Watch] {} File(s) changed: {}",
-                                        file_count,
-                                        path.display()
-                                    );
-                                }
-                                process_file(&path, cli, is_multi_file, compiler_options);
+                while let Ok(Ok(Event {
+                    kind: k, paths: ps, ..
+                })) = rx.recv_timeout(std::time::Duration::from_millis(100))
+                {
+                    if k.is_modify() || k.is_create() {
+                        for p in ps {
+                            if p.extension().map_or(false, |ext| ext == "heml") {
+                                changed_paths.insert(p);
                             }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                if !cli.quiet {
-                    eprintln!("Watch error: {:?}", e);
+
+                for path in changed_paths {
+                    let source = fs::read_to_string(&path).unwrap_or_default();
+
+                    if is_component_file(&source) {
+                        if !cli.quiet {
+                            println!(
+                                "\n[Watch] Component '{}' changed. Rebuilding all files...",
+                                path.file_name().unwrap().display()
+                            );
+                        }
+
+                        let fresh_files = collect_files(&cli.inputs, true);
+                        let current_is_multi = fresh_files.len() > 1;
+
+                        for (file, base) in &fresh_files {
+                            process_file(file, base, cli, current_is_multi, compiler_options);
+                        }
+                    } else {
+                        if !cli.quiet {
+                            println!("\n[Watch] File changed: {}", path.display());
+                        }
+
+                        let mut base_path = path.parent().unwrap_or(Path::new("")).to_path_buf();
+                        for input in &cli.inputs {
+                            let input_path = Path::new(input);
+                            let absolute_input = fs::canonicalize(input_path)
+                                .unwrap_or_else(|_| input_path.to_path_buf());
+                            let absolute_path =
+                                fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+
+                            if absolute_path.starts_with(&absolute_input) {
+                                base_path = if absolute_input.is_dir() {
+                                    absolute_input
+                                } else {
+                                    absolute_input
+                                        .parent()
+                                        .unwrap_or(Path::new(""))
+                                        .to_path_buf()
+                                };
+                                break;
+                            }
+                        }
+
+                        process_file(&path, &base_path, cli, is_multi_file, compiler_options);
+                    }
                 }
+            }
+            Ok(Err(e)) => {
+                if !cli.quiet {
+                    eprintln!("{:?}", e);
+                }
+            }
+            Err(_) => {
+                break;
             }
         }
     }
@@ -424,8 +491,8 @@ fn main() -> ExitCode {
 
     let is_multi_file = files_to_process.len() > 1;
 
-    for file in &files_to_process {
-        if !process_file(file, &cli, is_multi_file, &compiler_options) {
+    for (file, base) in &files_to_process {
+        if !process_file(file, base, &cli, is_multi_file, &compiler_options) {
             all_success = false;
         }
     }
@@ -449,7 +516,4 @@ fn main() -> ExitCode {
 /*  TODO: Make this changes happen!!!
     - Isolate all html code generation into their own file.
     - Organize all type's and their impl's
-    - Improve --watch command:
-        - It should start to listen new created files inside a folder while already watching.
-        - It should auto compile everything when any component is changed.
 */
