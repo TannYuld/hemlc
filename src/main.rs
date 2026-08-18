@@ -74,10 +74,21 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
 
     for input in inputs {
-        let path = Path::new(input);
+        let mut path = PathBuf::from(input);
+
+        if path.extension().is_none() && !path.is_dir() {
+            path.set_extension("heml");
+        }
 
         if path.is_file() {
-            files.push(path.to_path_buf());
+            if path.extension().map_or(false, |ext| ext == "heml") {
+                files.push(path.to_path_buf());
+            } else if !quiet {
+                eprintln!(
+                    "Input file '{}' must have a .heml extension.",
+                    path.display()
+                );
+            }
         } else if path.is_dir() {
             match fs::read_dir(path) {
                 Ok(entries) => {
@@ -195,10 +206,20 @@ fn process_file(
             let file_name = file_path.file_name().unwrap();
             out_p.join(file_name).with_extension("html")
         } else {
-            if let Some(parent) = out_p.parent() {
-                let _ = fs::create_dir_all(parent);
+            if out_p.extension().map_or(false, |ext| ext == "html") {
+                if let Some(parent) = out_p.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                out_p
+            } else {
+                if !cli.quiet {
+                    eprintln!(
+                        "Output file '{}' must have a .html extension.",
+                        out_p.display()
+                    );
+                }
+                return false;
             }
-            out_p
         }
     } else {
         file_path.with_extension("html")
@@ -428,12 +449,7 @@ fn main() -> ExitCode {
 /*  TODO: Make this changes happen!!!
     - Isolate all html code generation into their own file.
     - Organize all type's and their impl's
-    - Change the update fail message.
     - Improve --watch command:
         - It should start to listen new created files inside a folder while already watching.
         - It should auto compile everything when any component is changed.
-    - Improve heml component structure:
-        - Add a `<meta>` (name subject to change) to being able to put style and script tags, or not (this one is subject to decide weather or not to implement...)
-    - Improve heml file structure:
-        - Force for `.heml` file format by compiler level.
 */

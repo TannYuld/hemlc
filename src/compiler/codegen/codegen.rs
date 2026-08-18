@@ -1,7 +1,9 @@
 use crate::{
     MIN_JS_CORE,
     compiler::{
-        codegen::{htmlgen::HtmlGenerator, jsgen::JsGenerator}, obfuscation::ObfuscatedExpr, resolver::ExtendedDocument,
+        codegen::{htmlgen::HtmlGenerator, jsgen::JsGenerator},
+        obfuscation::ObfuscatedExpr,
+        resolver::ExtendedDocument,
     },
     core::{
         error::{CompileError, Result},
@@ -85,7 +87,12 @@ impl Compiler {
         Self {
             buffer: OutputBuffer::new(),
             options,
+            scope_id: None,
         }
+    }
+
+    fn scope_id(&mut self, id: ObfuscatedExpr) {
+        self.scope_id = Some(id);
     }
 
     fn compile(mut self, doc: &ExtendedDocument) -> Result<String> {
@@ -106,6 +113,7 @@ impl Compiler {
         compiler_options: &CompilerOptions,
     ) -> Result<String> {
         let mut sub_compiler = Compiler::new(*compiler_options);
+        sub_compiler.scope_id(ObfuscatedExpr::new());
 
         for prop in &comp.properties {
             let ComponentProperties::Attribute(name, ..) = prop;
@@ -128,7 +136,11 @@ impl Compiler {
             })?;
         sub_compiler.traverse_nodes(&comp.edoc, &component_nodes)?;
 
-        let html_string = if compiler_options.codegen_strategy == CodegenStrategy::MinifyAll {&sub_compiler.buffer.html.replace("> <", "><")} else {&sub_compiler.buffer.html.clone()};
+        let html_string = if compiler_options.codegen_strategy == CodegenStrategy::MinifyAll {
+            &sub_compiler.buffer.html.replace("> <", "><")
+        } else {
+            &sub_compiler.buffer.html.clone()
+        };
         let js_vars = &sub_compiler.buffer.js.var_zone;
         let js_bindings = &sub_compiler.buffer.js.binding_zone;
 
@@ -156,6 +168,10 @@ impl Compiler {
                 void,
             } => {
                 let mut safe_attrs_map = HashMap::new();
+                if let Some(scope_id) = &self.scope_id {
+                    safe_attrs_map.insert("heml-comp-scope".to_string(), Some(scope_id.0.clone()));
+                }
+
                 let mut events = Vec::new();
                 for (key, val) in attrs.iter() {
                     let key_lower = key.to_ascii_lowercase();
@@ -209,17 +225,21 @@ impl Compiler {
                 attrs,
                 content,
             } => {
+                let mut content = content.clone();
                 if tag.eq_ignore_ascii_case("script") {
-                    self.buffer.js.binding_zone += self.user_script_block(content).as_str();
-                } else {
-                    self.buffer.html += &if attrs.is_empty() {
-                        format!("<{}>", tag)
-                    } else {
-                        format!("<{} {}>", tag, attrs)
-                    };
-                    self.buffer.html += content.as_str();
-                    self.buffer.html += &format!("</{}>", tag);
+                    self.buffer.js.binding_zone += self.user_script_block(&content).as_str();
+                    return Ok(());
+                } else if let Some(scope_id) = &self.scope_id && tag.eq_ignore_ascii_case("style") && attrs.exist("scoped") {
+                    content = scope_css(&content, &scope_id.0);
                 }
+                
+                self.buffer.html += &if attrs.is_empty() {
+                    format!("<{}>", tag)
+                } else {
+                    format!("<{} {}>", tag, attrs)
+                };
+                self.buffer.html += content.as_str();
+                self.buffer.html += &format!("</{}>", tag);
             }
             NodeKind::Text(text) => {
                 self.buffer.html +=
@@ -316,7 +336,12 @@ impl Compiler {
                     }
                     props_js.push('}');
 
-                    let html_string = if self.options.codegen_strategy == CodegenStrategy::MinifyAll {slot_compiler.buffer.html.trim().replace("> <", "><")} else {slot_compiler.buffer.html.clone()};
+                    let html_string = if self.options.codegen_strategy == CodegenStrategy::MinifyAll
+                    {
+                        slot_compiler.buffer.html.trim().replace("> <", "><")
+                    } else {
+                        slot_compiler.buffer.html.clone()
+                    };
                     self.buffer.js.binding_zone += self
                         .component_initialization(
                             func_name,
@@ -396,4 +421,23 @@ fn parse_js_expr(val: &str) -> String {
     } else {
         format!("`{}`", val)
     }
+}
+
+fn scope_css(raw_css: &str, scope_id: &str) -> String {
+    let mut scoped_css = String::new();
+    
+    for block in raw_css.split('}') {
+        if block.trim().is_empty() { continue; }
+        
+        if let Some((selectors, rules)) = block.split_once('{') {
+            let scoped_selectors: Vec<String> = selectors
+                .split(',')
+                .map(|s| format!("{}[heml-comp-scope=\"{}\"]", s.trim(), scope_id))
+                .collect();
+                
+            scoped_css += &format!("{} {{{}}}\n", scoped_selectors.join(", "), rules);
+        }
+    }
+    
+    scoped_css
 }

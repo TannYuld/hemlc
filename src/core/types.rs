@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{compiler::resolver::ExtendedDocument, core::error::CompileError};
+use crate::{compiler::{obfuscation::ObfuscatedExpr, resolver::ExtendedDocument}, core::error::CompileError};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token<'a> {
@@ -229,7 +229,8 @@ pub struct OutputBuffer {
 
 pub struct Compiler {
     pub buffer: OutputBuffer,
-    pub options: CompilerOptions
+    pub options: CompilerOptions,
+    pub scope_id: Option<ObfuscatedExpr>
 }
 
 #[derive(Debug, Clone, Copy)]
