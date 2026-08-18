@@ -108,7 +108,12 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
     files
 }
 
-fn process_file(file_path: &Path, cli: &Cli, is_multi_file: bool, options: &CompilerOptions) -> bool {
+fn process_file(
+    file_path: &Path,
+    cli: &Cli,
+    is_multi_file: bool,
+    options: &CompilerOptions,
+) -> bool {
     let source = match fs::read_to_string(file_path) {
         Ok(s) => s,
         Err(e) => {
@@ -223,7 +228,11 @@ fn process_file(file_path: &Path, cli: &Cli, is_multi_file: bool, options: &Comp
     true
 }
 
-fn watch_files(cli: &Cli, is_multi_file: bool, compiler_options: &CompilerOptions) -> notify::Result<()> {
+fn watch_files(
+    cli: &Cli,
+    is_multi_file: bool,
+    compiler_options: &CompilerOptions,
+) -> notify::Result<()> {
     let (tx, rx) = channel();
     let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
 
@@ -320,10 +329,13 @@ fn update_self() -> ExitCode {
         let tmp_tarball_path = tmp_dir.path().join(&asset.name);
         let tmp_tarball = ::std::fs::File::create(&tmp_tarball_path)?;
 
+        println!("Downloading...");
         self_update::Download::from_url(&asset.download_url)
             .set_header(reqwest::header::ACCEPT, "application/octet-stream".parse()?)
+            .show_progress(true)
             .download_to(&tmp_tarball)?;
 
+        println!("\nDownload complete.\nExtracting archive...");
         let bin_name = std::path::PathBuf::from("bin");
         self_update::Extract::from_source(&tmp_tarball_path)
             .archive(self_update::ArchiveKind::Tar(Some(
@@ -331,6 +343,7 @@ fn update_self() -> ExitCode {
             )))
             .extract_file(&tmp_dir.path(), &bin_name)?;
 
+        println!("Installing new executable...");
         let new_exe = tmp_dir.path().join(bin_name);
         self_replace::self_replace(new_exe)?;
 
@@ -340,16 +353,19 @@ fn update_self() -> ExitCode {
     match update() {
         Ok(true) => {
             println!("Successfully updated to new version.");
-            ExitCode::SUCCESS   
-        },
-        Ok(false) => {
-            println!("hemlc is already up to date (v{}).", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
-        },
+        }
+        Ok(false) => {
+            println!(
+                "hemlc is already up to date (v{}).",
+                env!("CARGO_PKG_VERSION")
+            );
+            ExitCode::SUCCESS
+        }
         Err(e) => {
-            eprintln!("Failed to update: {}", e);
+            eprintln!("Operation aborted!\n{}", e);
             ExitCode::FAILURE
-        },
+        }
     }
 }
 
@@ -366,17 +382,17 @@ fn main() -> ExitCode {
     if cli.update {
         return update_self();
     }
-    
+
     let mut all_success = true;
-    
+
     let files_to_process = collect_files(&cli.inputs, cli.quiet);
     let compiler_options = match get_compiler_options_from_cli(&cli) {
         Ok(options) => options,
         Err(e) => {
             eprintln!("{}", e);
             return ExitCode::FAILURE;
-        },
-    };    
+        }
+    };
 
     if files_to_process.is_empty() {
         if !cli.quiet {
@@ -409,12 +425,10 @@ fn main() -> ExitCode {
     }
 }
 
-
 /*  TODO: Make this changes happen!!!
     - Isolate all html code generation into their own file.
     - Organize all type's and their impl's
     - Change the update fail message.
-    - Add progressbar to different update phases.
     - Improve --watch command:
         - It should start to listen new created files inside a folder while already watching.
         - It should auto compile everything when any component is changed.
