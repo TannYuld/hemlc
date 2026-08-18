@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::compiler::resolver::ExtendedDocument;
+use crate::{compiler::resolver::ExtendedDocument, core::error::CompileError};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token<'a> {
@@ -229,6 +229,19 @@ pub struct OutputBuffer {
 
 pub struct Compiler {
     pub buffer: OutputBuffer,
+    pub options: CompilerOptions
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CompilerOptions{
+    pub codegen_strategy: CodegenStrategy
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodegenStrategy {
+    AsIs,
+    MinifyJsOnly,
+    MinifyAll
 }
 
 #[derive(Debug, PartialEq)]
@@ -257,6 +270,25 @@ pub type ResolvedImports = HashMap<String, ComponentDocument>;
 impl ComponentDocument {
     pub fn new(edoc: ExtendedDocument, properties: HashSet<ComponentProperties>) -> Self {
         Self { edoc, properties }
+    }
+}
+
+impl Default for CompilerOptions {
+    fn default() -> Self {
+        Self { codegen_strategy: CodegenStrategy::MinifyAll }
+    }
+}
+
+impl TryFrom<usize> for CodegenStrategy {
+    type Error = CompileError;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::AsIs),
+            1 => Ok(Self::MinifyJsOnly),
+            2 => Ok(Self::MinifyAll),
+            _ => Err(CompileError::plain("Invalid minify level."))
+        }
     }
 }
 

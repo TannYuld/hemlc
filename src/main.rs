@@ -16,8 +16,11 @@ use std::process::ExitCode;
 use std::sync::mpsc::channel;
 
 use crate::compiler::resolver::{ExtendedDocument, resolve};
+use crate::core::error::Result;
 use crate::core::lexer::tokenize;
 use crate::core::parser::parse;
+use crate::core::types::CodegenStrategy;
+use crate::core::types::CompilerOptions;
 use crate::core::types::Document;
 
 pub const MIN_JS_CORE: &'static str = include_str!(concat!(env!("OUT_DIR"), "/core.min.js"));
@@ -37,12 +40,15 @@ struct Cli {
     out: Option<String>,
 
     #[arg(short, long)]
+    minify: Option<usize>,
+
+    #[arg(short, long)]
     update: bool,
 
     #[arg(short, long)]
     watch: bool,
 
-    #[arg(long)]
+    #[arg(short, long)]
     check: bool,
 
     #[arg(short, long)]
@@ -75,7 +81,7 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
         } else if path.is_dir() {
             match fs::read_dir(path) {
                 Ok(entries) => {
-                    for entry in entries.filter_map(Result::ok) {
+                    for entry in entries.filter_map(std::result::Result::ok) {
                         let entry_path = entry.path();
 
                         let is_target_file = entry_path.is_file()
@@ -102,7 +108,7 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<PathBuf> {
     files
 }
 
-fn process_file(file_path: &Path, cli: &Cli, is_multi_file: bool) -> bool {
+fn process_file(file_path: &Path, cli: &Cli, is_multi_file: bool, options: &CompilerOptions) -> bool {
     let source = match fs::read_to_string(file_path) {
         Ok(s) => s,
         Err(e) => {
@@ -157,7 +163,7 @@ fn process_file(file_path: &Path, cli: &Cli, is_multi_file: bool) -> bool {
         return true;
     }
 
-    let doc = match east.compile() {
+    let doc = match east.compile(*options) {
         Ok(d) => d,
         Err(e) => {
             if !cli.quiet {
@@ -217,7 +223,7 @@ fn process_file(file_path: &Path, cli: &Cli, is_multi_file: bool) -> bool {
     true
 }
 
-fn watch_files(cli: &Cli, is_multi_file: bool) -> notify::Result<()> {
+fn watch_files(cli: &Cli, is_multi_file: bool, compiler_options: &CompilerOptions) -> notify::Result<()> {
     let (tx, rx) = channel();
     let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
 
@@ -253,7 +259,7 @@ fn watch_files(cli: &Cli, is_multi_file: bool) -> notify::Result<()> {
                                 let current_is_multi = fresh_files.len() > 1;
 
                                 for file in &fresh_files {
-                                    process_file(file, cli, current_is_multi);
+                                    process_file(file, cli, current_is_multi, compiler_options);
                                 }
                             } else {
                                 if !cli.quiet {
@@ -263,7 +269,7 @@ fn watch_files(cli: &Cli, is_multi_file: bool) -> notify::Result<()> {
                                         path.display()
                                     );
                                 }
-                                process_file(&path, cli, is_multi_file);
+                                process_file(&path, cli, is_multi_file, compiler_options);
                             }
                         }
                     }
@@ -281,7 +287,7 @@ fn watch_files(cli: &Cli, is_multi_file: bool) -> notify::Result<()> {
 }
 
 fn update_self() -> ExitCode {
-    let update = || -> Result<bool, Box<dyn std::error::Error>> {
+    let update = || -> std::result::Result<bool, Box<dyn std::error::Error>> {
         let releases = self_update::backends::github::ReleaseList::configure()
             .repo_owner("tannyuld")
             .repo_name("hemlc")
@@ -347,15 +353,30 @@ fn update_self() -> ExitCode {
     }
 }
 
+fn get_compiler_options_from_cli(cli: &Cli) -> Result<CompilerOptions> {
+    let mut compiler_options = CompilerOptions::default();
+    if let Some(minfy_elevation) = cli.minify {
+        compiler_options.codegen_strategy = CodegenStrategy::try_from(minfy_elevation)?;
+    }
+    Ok(compiler_options)
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     if cli.update {
         return update_self();
     }
-
+    
     let mut all_success = true;
-
+    
     let files_to_process = collect_files(&cli.inputs, cli.quiet);
+    let compiler_options = match get_compiler_options_from_cli(&cli) {
+        Ok(options) => options,
+        Err(e) => {
+            eprintln!("{}", e);
+            return ExitCode::FAILURE;
+        },
+    };    
 
     if files_to_process.is_empty() {
         if !cli.quiet {
@@ -367,13 +388,13 @@ fn main() -> ExitCode {
     let is_multi_file = files_to_process.len() > 1;
 
     for file in &files_to_process {
-        if !process_file(file, &cli, is_multi_file) {
+        if !process_file(file, &cli, is_multi_file, &compiler_options) {
             all_success = false;
         }
     }
 
     if cli.watch {
-        if let Err(e) = watch_files(&cli, is_multi_file) {
+        if let Err(e) = watch_files(&cli, is_multi_file, &compiler_options) {
             if !cli.quiet {
                 eprintln!("Failed to start watcher: {:?}", e);
             }
@@ -389,7 +410,11 @@ fn main() -> ExitCode {
 }
 
 
-/*  TODO: Make this changes happen!!!  
+/*  TODO: Make this changes happen!!!
+    - Let the user choose to minfy or not.
+    - Fix `hemlc --update` needs at least one parameter like this `helmc --update something`.
+    - Change the update fail message.
+    - Add progressbar to different update phases.
     - Improve --watch command:
         - It should start to listen new created files inside a folder while already watching.
         - It should auto compile everything when any component is changed.
