@@ -33,7 +33,7 @@ pub const HELP_MSG: &'static str = include_str!("./help.msg");
     override_help = HELP_MSG
 )]
 struct Cli {
-    #[arg(required = true)]
+    #[arg(required_unless_present = "update")]
     inputs: Vec<String>,
 
     #[arg(short, long)]
@@ -42,7 +42,7 @@ struct Cli {
     #[arg(short, long)]
     minify: Option<usize>,
 
-    #[arg(short, long)]
+    #[arg(long, exclusive = true)]
     update: bool,
 
     #[arg(short, long)]
@@ -411,8 +411,8 @@ fn main() -> ExitCode {
 
 
 /*  TODO: Make this changes happen!!!
-    - Let the user choose to minfy or not.
-    - Fix `hemlc --update` needs at least one parameter like this `helmc --update something`.
+    - Isolate all html code generation into their own file.
+    - Organize all type's and their impl's
     - Change the update fail message.
     - Add progressbar to different update phases.
     - Improve --watch command:
