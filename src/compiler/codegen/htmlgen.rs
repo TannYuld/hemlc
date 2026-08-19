@@ -1,4 +1,4 @@
-use crate::core::types::{CodegenStrategy, Compiler};
+use crate::{compiler::codegen::types::{CodegenStrategy, Compiler}, core::types::Attrs};
 
 pub trait HtmlGenerator {
     fn user_script_block(&self, content: &str) -> String;
@@ -74,4 +74,17 @@ impl HtmlGenerator for Compiler {
             ),
         }
     }
+}
+
+pub fn generate_html_from_attrs(attrs: &Attrs) -> String {
+    let mut buffer = String::new();
+    for (key, val) in attrs.iter() {
+        buffer += key.as_str();
+        if let Some(val) = val {
+            buffer += &format!("=\"{}\" ", val.as_str());
+        } else {
+            buffer += " ";
+        }
+    }
+    buffer.trim_end().to_string()
 }

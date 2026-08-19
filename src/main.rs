@@ -15,12 +15,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc::channel;
 
+use crate::compiler::codegen::CodegenStrategy;
+use crate::compiler::codegen::Compiler;
+use crate::compiler::codegen::CompilerOptions;
 use crate::compiler::resolver::{ExtendedDocument, resolve};
 use crate::core::error::Result;
 use crate::core::lexer::tokenize;
 use crate::core::parser::parse;
-use crate::core::types::CodegenStrategy;
-use crate::core::types::CompilerOptions;
 use crate::core::types::Document;
 
 pub const MIN_JS_CORE: &'static str = include_str!(concat!(env!("OUT_DIR"), "/core.min.js"));
@@ -179,7 +180,7 @@ fn process_file(
         return true;
     }
 
-    let doc = match east.compile(*options) {
+    let doc = match Compiler::new(*options).compile(east) {
         Ok(d) => d,
         Err(e) => {
             if !cli.quiet {

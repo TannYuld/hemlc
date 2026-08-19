@@ -1,6 +1,6 @@
-use crate::{
-    compiler::obfuscation::ObfuscatedExpr,
-    core::types::{CodegenStrategy, Compiler},
+use crate::compiler::{
+    codegen::{types::{CodegenStrategy, Compiler}, util},
+    obfuscation::ObfuscatedExpr,
 };
 
 pub trait JsGenerator {
@@ -24,11 +24,14 @@ pub trait JsGenerator {
         js_var_bindings: &str,
         nested_functions: &str,
     ) -> String;
+    fn component_attributes(&self, name: &str) -> String;
 
     fn fixed_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String;
     fn reactive_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String;
 
-    fn component_attributes(&self, name: &str) -> String;
+    fn generate_variable_decleration(&self, var_name: &str, val: &Option<String>) -> String;
+
+    fn assemble_js(&self) -> String;
 }
 
 impl JsGenerator for Compiler {
@@ -36,7 +39,7 @@ impl JsGenerator for Compiler {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => {
                 format!(
-    "
+                    "
     const m_{0} = FindMarker('{0}', frag);
     if (slot_frag) {{
         m_{0}.replaceWith(slot_frag);
@@ -68,7 +71,7 @@ impl JsGenerator for Compiler {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => {
                 format!(
-    "
+                    "
     const target_{0} = FindMarker('{0}', frag);
     const slot_frag_{0} = (() => {{ 
         {1}
@@ -93,7 +96,7 @@ impl JsGenerator for Compiler {
     fn fixed_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => format!(
-    "
+                "
     const marker__{0} = FindMarker(\"{0}\", frag);
     marker__{0}.after(document.createTextNode({1}.value{2}));
     ",
@@ -109,7 +112,7 @@ impl JsGenerator for Compiler {
     fn reactive_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => format!(
-    "
+                "
     const marker__{0} = FindMarker(\"{0}\", frag);
     BindValue(marker__{0}, {1}, () => ({1}.value{2}));
     ",
@@ -125,7 +128,7 @@ impl JsGenerator for Compiler {
     fn component_event_handling(&self, id: &str, js_event: &str, logic: &str) -> String {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => format!(
-    "
+                "
     frag.querySelector('[data-heml-id=\"{}\"]').addEventListener('{}', async (event) => {{
         {}
     }});
@@ -149,7 +152,7 @@ impl JsGenerator for Compiler {
     ) -> String {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => format!(
-    "
+                "
     {}
     function {}(marker_target, props, slot_frag) {{
         {}
@@ -176,6 +179,38 @@ impl JsGenerator for Compiler {
             CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
                 "const {0}=(props.{0}!==undefined&&props.{0}.addSubscriber)?props.{0}:Observable(props.{0});",
                 name
+            ),
+        }
+    }
+
+    fn assemble_js(&self) -> String {
+        let new_line = if self.options.codegen_strategy == CodegenStrategy::AsIs {"\n"} else {""};
+        let mut result = String::new();
+        result += &self.buffer.js.component_function_zone;
+        result += new_line;
+        result += &self.buffer.js.var_zone;
+        result += new_line;
+        result += "\tconst frag=document;";
+        result += new_line;
+        result += &self.buffer.js.binding_zone;
+        result
+    }
+
+    fn generate_variable_decleration(&self, name: &str, val: &Option<String>) -> String {
+        let val_expr = if let Some(val) = val {
+            util::parse_js_expr(val)
+        } else {
+            "undefined".to_string()
+        };
+
+        match self.options.codegen_strategy {
+            CodegenStrategy::AsIs => format!(
+                "\tconst {} = Observable({});",
+                name, val_expr
+            ),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
+                "const {}=Observable({});",
+                name, val_expr
             ),
         }
     }
