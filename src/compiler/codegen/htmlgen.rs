@@ -104,9 +104,9 @@ pub fn build_open_tag(tag: &str, attrs: &Attrs, is_void: bool) -> String {
 }
 
 pub fn generate_doctype(doctype: &str) -> String {
-    return format!("<!DOCTYPE {}>", if doctype.eq_ignore_ascii_case("heml") {"html"} else {doctype})
+    format!("<!DOCTYPE {}>", if doctype.eq_ignore_ascii_case("heml") {"html"} else {doctype})
 }
 
 pub fn generate_closing_tag(tag_name: &str) -> String {
-    return format!("</{}>", tag_name)
+    format!("</{}>", tag_name)
 }

@@ -22,17 +22,14 @@ pub fn resolve_imports(path: &Path, doc: &Document) -> Result<HashMap<String, Co
 }
 
 fn _resolve_import(path: &Path, node: &Node, imports: &mut ResolvedImports) -> Result<()> {
-    match &node.kind {
-        crate::core::types::NodeKind::Element { tag, children, .. } => {
-            if tag == "head" {
-                look_for_imports(path, children, imports)?;
-            } else {
-                for child in children {
-                    _resolve_import(path, &child, imports)?;
-                }
+    if let crate::core::types::NodeKind::Element { tag, children, .. } = &node.kind {
+        if tag == "head" {
+            look_for_imports(path, children, imports)?;
+        } else {
+            for child in children {
+                _resolve_import(path, child, imports)?;
             }
         }
-        _ => {}
     }
     Ok(())
 }
@@ -43,22 +40,19 @@ fn look_for_imports(
     imports: &mut ResolvedImports,
 ) -> Result<()> {
     for node in nodes {
-        match &node.kind {
-            crate::core::types::NodeKind::Import { src, alias } => {
-                let mut path = PathBuf::from(src);
-                if !path.is_absolute() {
-                    path = original_path.parent().unwrap().join(path);
-                }
-
-                let comp_name = if let Some(custom_name) = alias {
-                    custom_name.to_string()
-                } else {
-                    path.file_name().unwrap().to_str().unwrap().to_string()
-                };
-
-                imports.insert(comp_name, resolve_heml_file(path)?);
+        if let crate::core::types::NodeKind::Import { src, alias } = &node.kind {
+            let mut path = PathBuf::from(src);
+            if !path.is_absolute() {
+                path = original_path.parent().unwrap().join(path);
             }
-            _ => {}
+
+            let comp_name = if let Some(custom_name) = alias {
+                custom_name.to_string()
+            } else {
+                path.file_name().unwrap().to_str().unwrap().to_string()
+            };
+
+            imports.insert(comp_name, resolve_heml_file(path)?);
         }
     }
     Ok(())

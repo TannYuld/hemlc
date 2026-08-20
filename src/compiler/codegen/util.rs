@@ -1,4 +1,4 @@
-use crate::{compiler::codegen::htmlgen, core::types::Attrs};
+use crate::core::types::Attrs;
 
 /// This converts `someAttr="RawText"` into `'RawText'`
 /// and `someAttr="{3}"` into `3` (Pure js block)
@@ -23,7 +23,7 @@ pub fn minify_text(text: &str) -> String {
     if text
         .chars()
         .next()
-        .map_or(false, |c| c.is_ascii_whitespace())
+        .is_some_and(|c| c.is_ascii_whitespace())
     {
         minified.insert(0, ' ');
     }
@@ -31,7 +31,7 @@ pub fn minify_text(text: &str) -> String {
     if text
         .chars()
         .last()
-        .map_or(false, |c| c.is_ascii_whitespace())
+        .is_some_and(|c| c.is_ascii_whitespace())
     {
         minified.push(' ');
     }

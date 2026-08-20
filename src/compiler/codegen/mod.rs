@@ -1,11 +1,11 @@
-mod codegen;
+mod engine;
+mod cssgen;
 mod htmlgen;
 mod jsgen;
-mod cssgen;
-mod util;
 mod types;
+mod util;
 
-pub use types::{Compiler, CompilerOptions, CodegenStrategy};
+pub use types::{CodegenStrategy, Compiler, CompilerOptions};
 
-pub const HEML_SCOPE_ATTRIBUTE_KEY: &'static str = "data-heml-scope";
-pub const HEML_ID_ATTRIBUTE_KEY: &'static str = "data-heml-id";
+pub const HEML_SCOPE_ATTRIBUTE_KEY: &str = "data-heml-scope";
+pub const HEML_ID_ATTRIBUTE_KEY: &str = "data-heml-id";

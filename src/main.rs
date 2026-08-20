@@ -19,14 +19,14 @@ use crate::compiler::codegen::CodegenStrategy;
 use crate::compiler::codegen::Compiler;
 use crate::compiler::codegen::CompilerOptions;
 use crate::compiler::resolver;
-use crate::core::error::Result;
 use crate::core::lexer;
 use crate::core::parser;
 use crate::core::types::Document;
 use crate::core::types::ExtendedDocument;
+use crate::core::error::Result;
 
-pub const MIN_JS_CORE: &'static str = include_str!(concat!(env!("OUT_DIR"), "/core.min.js"));
-pub const HELP_MSG: &'static str = include_str!("./help.msg");
+pub const MIN_JS_CORE: &str = include_str!(concat!(env!("OUT_DIR"), "/core.min.js"));
+pub const HELP_MSG: &str = include_str!("./help.msg");
 
 #[derive(Parser, Debug)]
 #[command(
@@ -81,7 +81,7 @@ fn collect_dir_recursive(dir: &Path, base: &Path, files: &mut Vec<(PathBuf, Path
             let path = entry.path();
             if path.is_dir() {
                 collect_dir_recursive(&path, base, files);
-            } else if path.extension().map_or(false, |ext| ext == "heml") {
+            } else if path.extension().is_some_and(|ext| ext == "heml") {
                 files.push((path, base.to_path_buf()));
             }
         }
@@ -99,7 +99,7 @@ fn collect_files(inputs: &[String], quiet: bool) -> Vec<(PathBuf, PathBuf)> {
         }
 
         if path.is_file() {
-            if path.extension().map_or(false, |ext| ext == "heml") {
+            if path.extension().is_some_and(|ext| ext == "heml") {
                 let base = path.parent().unwrap_or(Path::new("")).to_path_buf();
                 files.push((path.clone(), base));
             } else if !quiet {
@@ -208,18 +208,18 @@ fn process_file(
             };
 
             let full_out_path = out_p.join(relative_path).with_extension("html");
-            if let Some(parent) = full_out_path.parent() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    if !cli.quiet {
-                        eprintln!("Failed to create output directory {:?}: {}", parent, e);
-                    }
-                    return false;
+            if let Some(parent) = full_out_path.parent()
+                && let Err(e) = fs::create_dir_all(parent)
+            {
+                if !cli.quiet {
+                    eprintln!("Failed to create output directory {:?}: {}", parent, e);
                 }
+                return false;
             }
 
             full_out_path
         } else {
-            if out_p.extension().map_or(false, |ext| ext == "html") {
+            if out_p.extension().is_some_and(|ext| ext == "html") {
                 if let Some(parent) = out_p.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
@@ -302,7 +302,7 @@ fn watch_files(
 
                 let mut changed_paths = std::collections::HashSet::new();
                 for p in paths {
-                    if p.extension().map_or(false, |ext| ext == "heml") {
+                    if p.extension().is_some_and(|ext| ext == "heml") {
                         changed_paths.insert(p);
                     }
                 }
@@ -317,7 +317,7 @@ fn watch_files(
                 {
                     if k.is_modify() || k.is_create() {
                         for p in ps {
-                            if p.extension().map_or(false, |ext| ext == "heml") {
+                            if p.extension().is_some_and(|ext| ext == "heml") {
                                 changed_paths.insert(p);
                             }
                         }
@@ -386,70 +386,23 @@ fn watch_files(
 }
 
 fn update_self() -> ExitCode {
-    let update = || -> std::result::Result<bool, Box<dyn std::error::Error>> {
-        let releases = self_update::backends::github::ReleaseList::configure()
-            .repo_owner("tannyuld")
-            .repo_name("hemlc")
-            .build()?
-            .fetch()?;
+    println!("Checking for updates...");
 
-        if releases.is_empty() {
-            return Err("No releases found on GitHub.".into());
-        }
+    let update_result = self_update::backends::github::Update::configure()
+        .repo_owner("tannyuld")
+        .repo_name("hemlc")
+        .bin_name("bin")
+        .show_download_progress(true)
+        .current_version(env!("CARGO_PKG_VERSION"))
+        .build();
 
-        let latest_release = &releases[0];
-        let current_version = env!("CARGO_PKG_VERSION");
-
-        let is_newer =
-            self_update::version::bump_is_greater(current_version, &latest_release.version)
-                .unwrap_or(false);
-
-        if !is_newer {
-            return Ok(false);
-        }
-
-        let asset = releases[0]
-            .asset_for(&self_update::get_target(), None)
-            .unwrap();
-
-        let tmp_dir = tempfile::Builder::new()
-            .prefix("hemlc_update")
-            .tempdir_in(::std::env::current_dir()?)?;
-
-        let tmp_tarball_path = tmp_dir.path().join(&asset.name);
-        let tmp_tarball = ::std::fs::File::create(&tmp_tarball_path)?;
-
-        println!("Downloading...");
-        self_update::Download::from_url(&asset.download_url)
-            .set_header(reqwest::header::ACCEPT, "application/octet-stream".parse()?)
-            .show_progress(true)
-            .download_to(&tmp_tarball)?;
-
-        println!("\nDownload complete.\nExtracting archive...");
-        let bin_name = std::path::PathBuf::from("bin");
-        self_update::Extract::from_source(&tmp_tarball_path)
-            .archive(self_update::ArchiveKind::Tar(Some(
-                self_update::Compression::Gz,
-            )))
-            .extract_file(&tmp_dir.path(), &bin_name)?;
-
-        println!("Installing new executable...");
-        let new_exe = tmp_dir.path().join(bin_name);
-        self_replace::self_replace(new_exe)?;
-
-        Ok(true)
-    };
-
-    match update() {
-        Ok(true) => {
-            println!("Successfully updated to new version.");
+    match update_result.and_then(|updater| updater.update()) {
+        Ok(self_update::Status::UpToDate(version)) => {
+            println!("hemlc is already up to date (v{}).", version);
             ExitCode::SUCCESS
         }
-        Ok(false) => {
-            println!(
-                "hemlc is already up to date (v{}).",
-                env!("CARGO_PKG_VERSION")
-            );
+        Ok(self_update::Status::Updated(version)) => {
+            println!("Successfully updated to new version (v{}).", version);
             ExitCode::SUCCESS
         }
         Err(e) => {
@@ -499,13 +452,13 @@ fn main() -> ExitCode {
         }
     }
 
-    if cli.watch {
-        if let Err(e) = watch_files(&cli, is_multi_file, &compiler_options) {
-            if !cli.quiet {
-                eprintln!("Failed to start watcher: {:?}", e);
-            }
-            return ExitCode::FAILURE;
+    if cli.watch
+        && let Err(e) = watch_files(&cli, is_multi_file, &compiler_options)
+    {
+        if !cli.quiet {
+            eprintln!("Failed to start watcher: {:?}", e);
         }
+        return ExitCode::FAILURE;
     }
 
     if all_success {
@@ -514,7 +467,3 @@ fn main() -> ExitCode {
         ExitCode::FAILURE
     }
 }
-
-/*  TODO: Make this changes happen!!!
-    - Isolate all html code generation into their own file.
-*/

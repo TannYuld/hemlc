@@ -4,11 +4,8 @@ use crate::core::types::{ComponentProperties, Document, JsVarMap, Node, NodeKind
 
 pub fn insert_component_properties(properties: &[Node], props: &mut HashSet<ComponentProperties>) {
     for property in properties {
-        match &property.kind {
-            NodeKind::Attribute { name, optional } => {
-                props.insert(ComponentProperties::Attribute(name.to_string(), *optional));
-            }
-            _ => {}
+        if let NodeKind::Attribute { name, optional } = &property.kind {
+            props.insert(ComponentProperties::Attribute(name.to_string(), *optional));
         }
     }
 }
@@ -31,11 +28,7 @@ fn _extract_vars(node: &Node, vars: &mut JsVarMap) {
         NodeKind::Var { name, value } => {
             vars.insert(
                 name.to_string(),
-                if let Some(defualt_val) = value {
-                    Some(defualt_val.to_string())
-                } else {
-                    None
-                },
+                value.as_ref().map(|defualt_val| defualt_val.to_string()),
             );
         }
         _ => {}

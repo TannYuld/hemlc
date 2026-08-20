@@ -31,7 +31,7 @@ impl Compiler {
 
     fn traverse_nodes(&mut self, doc: &ExtendedDocument, nodes: &[Node]) -> Result<()> {
         for node in nodes {
-            self.traverse_node(node, &doc)?;
+            self.traverse_node(node, doc)?;
         }
         Ok(())
     }
@@ -63,7 +63,7 @@ impl Compiler {
             .ok_or_else(|| {
                 CompileError::plain("Invalid component file: missing `<component>` block.")
             })?;
-        sub_compiler.traverse_nodes(&comp.edoc, &component_nodes)?;
+        sub_compiler.traverse_nodes(&comp.edoc, component_nodes)?;
 
         let html_string = if compiler_options.codegen_strategy == CodegenStrategy::MinifyAll {
             &sub_compiler.buffer.html.replace("> <", "><")
@@ -77,10 +77,10 @@ impl Compiler {
 
         Ok(sub_compiler.component_function_declaration(
             &func_name,
-            &html_string.trim(),
-            &js_vars,
-            &js_bindings,
-            &nested_functions,
+            html_string.trim(),
+            js_vars,
+            js_bindings,
+            nested_functions,
         ))
     }
 
@@ -122,7 +122,7 @@ impl Compiler {
         &mut self,
         tag: &str,
         attrs: &Attrs,
-        children: &Vec<Node>,
+        children: &[Node],
         void: bool,
         edoc: &ExtendedDocument,
     ) -> Result<()> {
@@ -239,7 +239,7 @@ impl Compiler {
         };
 
         let end_of_base = clean_name
-            .find(|c| c == '.' || c == '[')
+            .find(['.', '['])
             .unwrap_or(clean_name.len());
         let base_var = &clean_name[..end_of_base];
         let remainder = &clean_name[end_of_base..];
@@ -259,7 +259,7 @@ impl Compiler {
         &mut self,
         tag: &str,
         attrs: &Attrs,
-        children: &Vec<Node>,
+        children: &[Node],
         edoc: &ExtendedDocument,
     ) -> Result<()> {
         if let Some(comp) = edoc.imports.get(tag) {
@@ -281,7 +281,7 @@ impl Compiler {
                     .component_function_registry
                     .insert(tag.to_string(), func_name.clone());
                 self.buffer.js.component_function_zone +=
-                    &Self::generate_function_by_component_doc(&comp, func_name, &compiler_options)?;
+                    &Self::generate_function_by_component_doc(comp, func_name, &compiler_options)?;
             }
 
             let func_name = self.buffer.js.component_function_registry.get(tag).unwrap();
