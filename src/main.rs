@@ -18,11 +18,12 @@ use std::sync::mpsc::channel;
 use crate::compiler::codegen::CodegenStrategy;
 use crate::compiler::codegen::Compiler;
 use crate::compiler::codegen::CompilerOptions;
-use crate::compiler::resolver::{ExtendedDocument, resolve};
+use crate::compiler::resolver;
 use crate::core::error::Result;
-use crate::core::lexer::tokenize;
-use crate::core::parser::parse;
+use crate::core::lexer;
+use crate::core::parser;
 use crate::core::types::Document;
+use crate::core::types::ExtendedDocument;
 
 pub const MIN_JS_CORE: &'static str = include_str!(concat!(env!("OUT_DIR"), "/core.min.js"));
 pub const HELP_MSG: &'static str = include_str!("./help.msg");
@@ -140,7 +141,7 @@ fn process_file(
         return true;
     }
 
-    let tokens = match tokenize(file_path, &source) {
+    let tokens = match lexer::tokenize(file_path, &source) {
         Ok(t) => t,
         Err(e) => {
             if !cli.quiet {
@@ -150,7 +151,7 @@ fn process_file(
         }
     };
 
-    let ast: Document = match parse(file_path, &source, &tokens) {
+    let ast: Document = match parser::parse(file_path, &source, &tokens) {
         Ok(ast) => ast,
         Err(e) => {
             if !cli.quiet {
@@ -160,7 +161,7 @@ fn process_file(
         }
     };
 
-    let east: ExtendedDocument = match resolve(file_path, ast) {
+    let east: ExtendedDocument = match resolver::resolve(file_path, ast) {
         Ok(e) => e,
         Err(e) => {
             if !cli.quiet {
@@ -516,5 +517,4 @@ fn main() -> ExitCode {
 
 /*  TODO: Make this changes happen!!!
     - Isolate all html code generation into their own file.
-    - Organize all type's and their impl's
 */

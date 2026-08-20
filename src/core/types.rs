@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{compiler::{resolver::ExtendedDocument}};
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token<'a> {
     pub kind: TokenKind<'a>,
@@ -209,6 +207,13 @@ pub struct Document {
 }
 
 // Resolver phase /////////////////////
+
+#[derive(Debug, PartialEq)]
+pub struct ExtendedDocument {
+    pub nodes: Vec<Node>,
+    pub vars: JsVarMap,
+    pub imports: ResolvedImports,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct ComponentDocument {

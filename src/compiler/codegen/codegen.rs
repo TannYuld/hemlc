@@ -8,13 +8,12 @@ use crate::{
             types::{CodegenStrategy, Compiler, CompilerOptions},
             util,
         },
-        obfuscation::ObfuscatedExpr,
-        resolver::ExtendedDocument,
+        obfuscation::ObfuscatedExpr
     },
     core::{
         error::{CompileError, Result},
         types::{
-            Attrs, ComponentDocument, ComponentProperties, EVENT_HANDLER_ATTR_NAMES, Node, NodeKind,
+            Attrs, ComponentDocument, ComponentProperties, EVENT_HANDLER_ATTR_NAMES, ExtendedDocument, Node, NodeKind
         },
     },
 };
@@ -115,7 +114,7 @@ impl Compiler {
     }
 
     fn handle_doctype(&mut self, doctype: &str) -> Result<()> {
-        self.buffer.html += format!("<!DOCTYPE {}>", doctype).as_str();
+        self.buffer.html += &htmlgen::generate_doctype(doctype);
         Ok(())
     }
 
@@ -160,7 +159,7 @@ impl Compiler {
                 .map(|(k, v)| crate::core::types::Attr::new(k, v)),
         );
 
-        self.buffer.html += &util::build_open_tag(tag, &safe_attrs, void && children.is_empty());
+        self.buffer.html += &htmlgen::build_open_tag(tag, &safe_attrs, void && children.is_empty());
 
         if !(void && children.is_empty()) {
             self.traverse_nodes(edoc, children)?;
@@ -170,7 +169,7 @@ impl Compiler {
                 self.buffer.html += &self.main_js_block(&self.assemble_js());
             }
 
-            self.buffer.html += &format!("</{}>", tag);
+            self.buffer.html += &htmlgen::generate_closing_tag(tag);
         }
 
         if let Some(id) = element_id {
@@ -202,13 +201,9 @@ impl Compiler {
             return Err(CompileError::plain("`scoped` attribute can only be used in an component document."))
         }
 
-        self.buffer.html += &if attrs.is_empty() {
-            format!("<{}>", tag)
-        } else {
-            format!("<{} {}>", tag, htmlgen::generate_html_from_attrs(attrs))
-        };
+        self.buffer.html += &htmlgen::build_open_tag(tag, attrs, false);
         self.buffer.html += content.as_str();
-        self.buffer.html += &format!("</{}>", tag);
+        self.buffer.html += &htmlgen::generate_closing_tag(tag);
         Ok(())
     }
 
@@ -223,9 +218,7 @@ impl Compiler {
     }
 
     fn handle_comment(&mut self, comment: &str) -> Result<()> {
-        if self.options.codegen_strategy != CodegenStrategy::MinifyAll {
-            self.buffer.html += format!("<!--{}-->", comment).as_str()
-        }
+        self.buffer.html += &self.generate_comment(comment);
         Ok(())
     }
 

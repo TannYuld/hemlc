@@ -39,20 +39,16 @@ pub fn minify_text(text: &str) -> String {
     minified
 }
 
-/// Builds something like this `<myTag ...>` or `<myTag .../>` (if it is void) with their respective attribtues.
-pub fn build_open_tag(tag: &str, attrs: &Attrs, is_void: bool) -> String {
-    if attrs.is_empty() {
-        if is_void {
-            format!("<{}/>", tag)
+/// Converts Attrs into text of `attrName="attrVal" attr...`
+pub fn generate_html_from_attrs(attrs: &Attrs) -> String {
+    let mut buffer = String::new();
+    for (key, val) in attrs.iter() {
+        buffer += key.as_str();
+        if let Some(val) = val {
+            buffer += &format!("=\"{}\" ", val.as_str());
         } else {
-            format!("<{}>", tag)
-        }
-    } else {
-        let attrs = htmlgen::generate_html_from_attrs(attrs);
-        if is_void {
-            format!("<{} {}/>", tag, attrs)
-        } else {
-            format!("<{} {}>", tag, attrs)
+            buffer += " ";
         }
     }
+    buffer.trim_end().to_string()
 }

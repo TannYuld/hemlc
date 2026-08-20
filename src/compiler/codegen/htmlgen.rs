@@ -1,9 +1,10 @@
-use crate::{compiler::codegen::types::{CodegenStrategy, Compiler}, core::types::Attrs};
+use crate::{compiler::codegen::{types::{CodegenStrategy, Compiler}, util}, core::types::Attrs};
 
 pub trait HtmlGenerator {
     fn user_script_block(&self, content: &str) -> String;
     fn main_js_block(&self, script: &str) -> String;
     fn core_js_block(&self, script: &str) -> String;
+    fn generate_comment(&self, comment:&str) -> String;
 }
 
 impl HtmlGenerator for Compiler {
@@ -74,17 +75,38 @@ impl HtmlGenerator for Compiler {
             ),
         }
     }
-}
-
-pub fn generate_html_from_attrs(attrs: &Attrs) -> String {
-    let mut buffer = String::new();
-    for (key, val) in attrs.iter() {
-        buffer += key.as_str();
-        if let Some(val) = val {
-            buffer += &format!("=\"{}\" ", val.as_str());
-        } else {
-            buffer += " ";
+    
+    fn generate_comment(&self, comment:&str) -> String {
+        if self.options.codegen_strategy != CodegenStrategy::MinifyAll {
+            format!("<!--{}-->", comment)
+        }else {
+            String::new()
         }
     }
-    buffer.trim_end().to_string()
+}
+
+/// Builds something like this `<myTag ...>` or `<myTag .../>` (if it is void) with their respective attribtues.
+pub fn build_open_tag(tag: &str, attrs: &Attrs, is_void: bool) -> String {
+    if attrs.is_empty() {
+        if is_void {
+            format!("<{}/>", tag)
+        } else {
+            format!("<{}>", tag)
+        }
+    } else {
+        let attrs = util::generate_html_from_attrs(attrs);
+        if is_void {
+            format!("<{} {}/>", tag, attrs)
+        } else {
+            format!("<{} {}>", tag, attrs)
+        }
+    }
+}
+
+pub fn generate_doctype(doctype: &str) -> String {
+    return format!("<!DOCTYPE {}>", if doctype.eq_ignore_ascii_case("heml") {"html"} else {doctype})
+}
+
+pub fn generate_closing_tag(tag_name: &str) -> String {
+    return format!("</{}>", tag_name)
 }
