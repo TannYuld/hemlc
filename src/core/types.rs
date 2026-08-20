@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::compiler::resolver::ExtendedDocument;
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct Token<'a> {
     pub kind: TokenKind<'a>,
@@ -43,27 +41,22 @@ impl Attr {
     pub fn new(key: impl Into<String>, value: Option<impl Into<String>>) -> Self {
         Attr {
             key: key.into(),
-            value: if let Some(val) = value {
-                Some(val.into())
-            } else {
-                None
-            },
+            value: value.map(|val| val.into()),
         }
     }
 }
 
 impl Attrs {
     pub fn attr<'a>(&'a self, key: &str) -> Option<&'a str> {
-        if let Some(val) = self.0.get(key) {
-            if let Some(val) = val {
+        if let Some(val) = self.0.get(key)
+            && let Some(val) = val {
                 return Some(val.as_str());
             }
-        }
         None
     }
 
     pub fn exist(&self, key: &str) -> bool {
-        self.0.get(key).is_some()
+        self.0.contains_key(key)
     }
 
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Option<String>> {
@@ -121,8 +114,6 @@ pub enum NodeKind {
     Comment(String),
     Doctype(String),
 
-
-
     // ---- HEML -------------------------------------------------------------
     /// `<import src="./mybutton.html" as="mybutton"/>`
     Import {
@@ -172,14 +163,9 @@ pub enum NodeKind {
     // ---- HEML - Component -----------------------------------------------------
     /// `<children/>` inside a component definition.
     Slot,
-    // Property {
-    //     name: String,
-    //     value: String,
-    //     body: Vec<String>,
-    // },
     Attribute {
         name: String,
-        optional: bool
+        optional: bool,
     },
     Properties {
         properties: Vec<Node>,
@@ -213,22 +199,13 @@ pub struct Document {
     pub nodes: Vec<Node>,
 }
 
-// Code generation phase /////////////////////
+// Resolver phase /////////////////////
 
-pub struct JsBufferBuilder {
-    pub var_zone: String,
-    pub binding_zone: String,
-    pub component_function_zone: String,
-    pub component_function_registry: HashMap<String, String>,
-}
-
-pub struct OutputBuffer {
-    pub js: JsBufferBuilder,
-    pub html: String,
-}
-
-pub struct Compiler {
-    pub buffer: OutputBuffer,
+#[derive(Debug, PartialEq)]
+pub struct ExtendedDocument {
+    pub nodes: Vec<Node>,
+    pub vars: JsVarMap,
+    pub imports: ResolvedImports,
 }
 
 #[derive(Debug, PartialEq)]
@@ -239,17 +216,8 @@ pub struct ComponentDocument {
 
 #[derive(Debug, Hash, PartialEq, Eq)]
 pub enum ComponentProperties {
-    // PropertyPassStrategy(PropertyPassStrategy),
-    Attribute(String, bool)
+    Attribute(String, bool),
 }
-
-// #[derive(Debug, Hash, PartialEq, Eq)]
-// pub enum PropertyPassStrategy {
-//     WhiteList(Vec<String>),
-//     BlackList(Vec<String>),
-//     PassAll,
-//     PassNone,
-// }
 
 pub type JsVarMap = HashMap<String, Option<String>>;
 pub type ResolvedImports = HashMap<String, ComponentDocument>;
@@ -285,7 +253,7 @@ pub const HEML_TAGS: &[&str] = &[
     "prop",
 ];
 
-pub const EVENT_HANDLER_ATTR_NAMES: &[&'static str] = &[
+pub const EVENT_HANDLER_ATTR_NAMES: &[&str] = &[
     "onabort",
     "onauxclick",
     "onbeforeinput",

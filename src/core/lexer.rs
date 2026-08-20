@@ -5,7 +5,7 @@ use crate::core::{
     types::{is_raw_text_element, Token, TokenKind},
 };
 
-fn parse_attributes<'a>(mut input: &'a str) -> Vec<(&'a str, Option<&'a str>)> {
+fn parse_attributes(mut input: &str) -> Vec<(&str, Option<&str>)> {
     let mut attributes = Vec::new();
 
     loop {
@@ -149,8 +149,8 @@ pub fn tokenize<'a>(file: &Path, source: &'a str) -> Result<Vec<Token<'a>>> {
                 .map(|c| c.is_ascii_alphabetic())
                 .unwrap_or(false);
 
-            if looks_like_tag {
-                if let Some(end) = find_tag_end(&source[cursor..]) {
+            if looks_like_tag
+                && let Some(end) = find_tag_end(&source[cursor..]) {
                     let inner = &source[cursor + 1..cursor + end];
                     let self_closing = inner.trim_end().ends_with('/');
                     let inner = if self_closing {
@@ -194,7 +194,6 @@ pub fn tokenize<'a>(file: &Path, source: &'a str) -> Result<Vec<Token<'a>>> {
                     }
                     continue;
                 }
-            }
         }
 
         // ---- text ---------------------------------------------------------

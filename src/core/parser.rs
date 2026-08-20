@@ -54,12 +54,11 @@ impl<'a, 'b> Parser<'a, 'b> {
         while let Some(tok) = self.peek() {
             match &tok.kind {
                 TokenKind::TagClose(name) => {
-                    if let Some(expected) = stop {
-                        if name.eq_ignore_ascii_case(expected) {
+                    if let Some(expected) = stop
+                        && name.eq_ignore_ascii_case(expected) {
                             self.pos += 1;
                             return self.merge(items);
                         }
-                    }
                     if is_void_element(name) {
                         // Tolerate the `</br>` idiom: treat it as `<br/>`.
                         items.push(Item::Node(Node::new(
@@ -151,11 +150,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             .iter()
             .map(|(k, v)| Attr {
                 key: (*k).to_string(),
-                value: if let Some(val) = v {
-                    Some(val.to_string())
-                } else {
-                    None
-                },
+                value: v.as_ref().map(|val| val.to_string()),
             })
             .collect();
 
@@ -366,11 +361,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                         .find(|(k, _)| k.eq_ignore_ascii_case("expr"))
                         .map(|(_, v)| {
                             let v = *v;
-                            if let Some(val) = v {
-                                Some(val.to_string())
-                            } else {
-                                None
-                            }
+                            v.map(|val| val.to_string())
                         });
                     if expr.is_none() && !is_default {
                         return Err(
@@ -388,11 +379,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                         expr: if is_default {
                             None
                         } else {
-                            if let Some(val) = expr {
-                                if let Some(v) = val { Some(v) } else { None }
-                            } else {
-                                None
-                            }
+                            expr.unwrap_or_default()
                         },
                         body,
                     });
@@ -408,11 +395,10 @@ impl<'a, 'b> Parser<'a, 'b> {
         if arms.is_empty() {
             return Err(self.err(match_start, "`<match>` needs at least one `<arm>`"));
         }
-        if let Some(i) = arms.iter().position(|a| a.expr.is_none()) {
-            if i != arms.len() - 1 {
+        if let Some(i) = arms.iter().position(|a| a.expr.is_none())
+            && i != arms.len() - 1 {
                 return Err(self.err(match_start, "the default `<arm>` must come last"));
             }
-        }
         Ok(arms)
     }
 
