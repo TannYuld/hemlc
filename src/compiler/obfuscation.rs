@@ -24,13 +24,13 @@ impl ObfuscatedExpr {
         str
     }
 
-    // pub fn generate_marker_pairs(&self) -> (String, String) {
-    //     let mut str_start = self.0.clone();
-    //     let mut str_end = self.0.clone();
-    //     str_start.insert_str(0, "<!-- marker:start__");
-    //     str_start += " -->";
-    //     str_end.insert_str(0, "<!-- marker:end__");
-    //     str_end += " -->";
-    //     (str_start, str_end)
-    // }
+    pub fn generate_marker_pairs(&self) -> (String, String) {
+        let mut str_start = self.0.clone();
+        let mut str_end = self.0.clone();
+        str_start.insert_str(0, "<!-- marker:start__");
+        str_start += " -->";
+        str_end.insert_str(0, "<!-- marker:end__");
+        str_end += " -->";
+        (str_start, str_end)
+    }
 }

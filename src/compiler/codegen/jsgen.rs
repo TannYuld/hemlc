@@ -1,5 +1,8 @@
 use crate::compiler::{
-    codegen::{types::{CodegenStrategy, Compiler}, util},
+    codegen::{
+        types::{CodegenStrategy, Compiler},
+        util,
+    },
     obfuscation::ObfuscatedExpr,
 };
 
@@ -29,7 +32,17 @@ pub trait JsGenerator {
     fn fixed_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String;
     fn reactive_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String;
 
+    fn dependecy_binding(&self, dependency: &str, expr: &ObfuscatedExpr) -> String;
+
     fn generate_variable_decleration(&self, var_name: &str, val: &Option<String>) -> String;
+    fn generate_conditional_block(
+        &self,
+        expr: &ObfuscatedExpr,
+        condition_bodies: &str,
+        dependency_bindings: &str,
+    ) -> String;
+    fn generate_condition_body(&self, condition: &str, body: &str) -> String;
+    fn generate_block_body(&self, vars: &str, html: &str, bindings: &str) -> String;
 
     fn assemble_js(&self) -> String;
 }
@@ -184,7 +197,11 @@ impl JsGenerator for Compiler {
     }
 
     fn assemble_js(&self) -> String {
-        let new_line = if self.options.codegen_strategy == CodegenStrategy::AsIs {"\n"} else {""};
+        let new_line = if self.options.codegen_strategy == CodegenStrategy::AsIs {
+            "\n"
+        } else {
+            ""
+        };
         let mut result = String::new();
         result += &self.buffer.js.component_function_zone;
         result += new_line;
@@ -204,14 +221,71 @@ impl JsGenerator for Compiler {
         };
 
         match self.options.codegen_strategy {
+            CodegenStrategy::AsIs => format!("\tconst {} = Observable({});", name, val_expr),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => {
+                format!("const {}=Observable({});", name, val_expr)
+            }
+        }
+    }
+
+    fn generate_condition_body(&self, condition: &str, body: &str) -> String {
+        match self.options.codegen_strategy {
             CodegenStrategy::AsIs => format!(
-                "\tconst {} = Observable({});",
-                name, val_expr
+                "
+    {{
+        condition: () => {0},
+        evaluation: () => {{
+            {1}
+        }}
+    }},
+    ",
+                condition, body
             ),
-            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
-                "const {}=Observable({});",
-                name, val_expr
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+        }
+    }
+
+    fn generate_conditional_block(
+        &self,
+        expr: &ObfuscatedExpr,
+        condition_bodies: &str,
+        dependency_bindings: &str,
+    ) -> String {
+        match self.options.codegen_strategy {
+            CodegenStrategy::AsIs => format!(
+                "
+    const markers_{0} = FindLimitMarkers('{0}', frag);
+    const update_{0} = If(markers_{0}, [
+        {1}
+    ]);
+    update_{0}();
+    {2}
+    ",
+                expr.0, condition_bodies, dependency_bindings
             ),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+        }
+    }
+
+    fn dependecy_binding(&self, dependency: &str, expr: &ObfuscatedExpr) -> String {
+        match self.options.codegen_strategy {
+            CodegenStrategy::AsIs => format!("{}.addSubscriber(update_{});", dependency, expr.0),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+        }
+    }
+
+    fn generate_block_body(&self, vars: &str, html: &str, bindings: &str) -> String {
+        match self.options.codegen_strategy {
+            CodegenStrategy::AsIs => format!(
+                "
+    {}
+    const frag = HtmlToFragment(`{}`);
+    {}
+    return frag;
+    ",
+                vars, html, bindings
+            ),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
         }
     }
 }

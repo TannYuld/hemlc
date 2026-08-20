@@ -52,3 +52,53 @@ pub fn generate_html_from_attrs(attrs: &Attrs) -> String {
     }
     buffer.trim_end().to_string()
 }
+
+/// Extract `[myObservable]` from condition of such conditionals `<if condition="{myObservable.value === 3 && myNonObservable === 5}">`
+pub fn extract_observables(expr: &str) -> Vec<String> {
+    let mut deps = std::collections::HashSet::new();
+    let mut chars = expr.chars().peekable();
+    let mut current_word = String::new();
+    let mut is_property = false;
+
+    while let Some(&c) = chars.peek() {
+        if c.is_ascii_alphabetic() || c == '_' || c == '$' || (c.is_ascii_digit() && !current_word.is_empty()) {
+            current_word.push(c);
+            chars.next();
+        } else {
+            if !current_word.is_empty() {
+                let mut next_char = ' ';
+                let mut lookahead = chars.clone();
+                
+                while let Some(&nc) = lookahead.peek() {
+                    if !nc.is_ascii_whitespace() {
+                        next_char = nc;
+                        break;
+                    }
+                    lookahead.next();
+                }
+
+                if !is_property && next_char != '(' && next_char != ':' && !is_js_keyword(&current_word) {
+                    deps.insert(current_word.clone());
+                }
+                current_word.clear();
+            }
+
+            let c = chars.next().unwrap();
+            if c == '.' {
+                is_property = true;
+            } else if !c.is_ascii_whitespace() {
+                is_property = false; 
+            }
+        }
+    }
+    
+    if !current_word.is_empty() && !is_property && !is_js_keyword(&current_word) {
+        deps.insert(current_word);
+    }
+    
+    deps.into_iter().collect()
+}
+
+fn is_js_keyword(word: &str) -> bool {
+    matches!(word, "true" | "false" | "null" | "undefined" | "Math" | "JSON" | "window" | "document" | "console")
+}

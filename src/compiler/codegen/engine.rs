@@ -8,16 +8,17 @@ use crate::{
             types::{CodegenStrategy, Compiler, CompilerOptions},
             util,
         },
-        obfuscation::ObfuscatedExpr
+        obfuscation::ObfuscatedExpr,
     },
     core::{
         error::{CompileError, Result},
         types::{
-            Attrs, ComponentDocument, ComponentProperties, EVENT_HANDLER_ATTR_NAMES, ExtendedDocument, Node, NodeKind
+            Arm, Attrs, Branch, ComponentDocument, ComponentProperties, EVENT_HANDLER_ATTR_NAMES,
+            ExtendedDocument, Node, NodeKind,
         },
     },
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl Compiler {
     fn scope_id(&mut self, id: ObfuscatedExpr) {
@@ -84,6 +85,25 @@ impl Compiler {
         ))
     }
 
+    fn generate_branch_body(
+        &self,
+        nodes: &[Node],
+        edoc: &ExtendedDocument,
+        condition: &str,
+    ) -> Result<String> {
+        let mut scope_compiler = Compiler::new(self.options);
+        scope_compiler.scope_id = self.scope_id.clone();
+        scope_compiler.traverse_nodes(edoc, nodes)?;
+
+        let branch_html = scope_compiler.buffer.html.trim();
+        let branch_vars = &scope_compiler.buffer.js.var_zone;
+        let branch_bindings = &scope_compiler.buffer.js.binding_zone;
+
+        let body = self.generate_block_body(branch_vars, branch_html, branch_bindings);
+
+        Ok(self.generate_condition_body(condition, &body))
+    }
+
     fn traverse_node(&mut self, node: &Node, edoc: &ExtendedDocument) -> Result<()> {
         match &node.kind {
             NodeKind::Doctype(doctype) => self.handle_doctype(doctype)?,
@@ -108,6 +128,11 @@ impl Compiler {
             } => self.handle_unknown(tag, attrs, children, edoc)?,
             NodeKind::Slot => self.handle_slot()?,
             NodeKind::Var { name, value } => self.handle_var(name, value)?,
+            NodeKind::If {
+                branches,
+                otherwise,
+            } => self.handle_if(branches, otherwise, edoc)?,
+            NodeKind::Match { value, arms } => self.handle_match(value, arms, edoc)?,
             _ => {}
         }
         Ok(())
@@ -198,7 +223,9 @@ impl Compiler {
             && tag.eq_ignore_ascii_case("style")
             && attrs.exist("scoped")
         {
-            return Err(CompileError::plain("`scoped` attribute can only be used in an component document."))
+            return Err(CompileError::plain(
+                "`scoped` attribute can only be used in an component document.",
+            ));
         }
 
         self.buffer.html += &htmlgen::build_open_tag(tag, attrs, false);
@@ -238,9 +265,7 @@ impl Compiler {
             name
         };
 
-        let end_of_base = clean_name
-            .find(['.', '['])
-            .unwrap_or(clean_name.len());
+        let end_of_base = clean_name.find(['.', '[']).unwrap_or(clean_name.len());
         let base_var = &clean_name[..end_of_base];
         let remainder = &clean_name[end_of_base..];
 
@@ -334,6 +359,80 @@ impl Compiler {
 
     fn handle_var(&mut self, name: &str, value: &Option<String>) -> Result<()> {
         self.buffer.js.var_zone += &self.generate_variable_decleration(name, value);
+        Ok(())
+    }
+
+    fn handle_if(
+        &mut self,
+        branches: &[Branch],
+        otherwise: &Option<Vec<Node>>,
+        edoc: &ExtendedDocument,
+    ) -> Result<()> {
+        let expr = ObfuscatedExpr::new();
+
+        self.buffer.html += &self.generate_conditional(&expr);
+
+        let mut condition_bodies = String::new();
+        let mut all_dependencies: HashSet<String> = HashSet::new();
+        for branch in branches {
+            let condition = util::parse_js_expr(&branch.condition);
+            for dep in util::extract_observables(&condition) {
+                all_dependencies.insert(dep);
+            }
+            condition_bodies += &self.generate_branch_body(&branch.body, edoc, &condition)?;
+        }
+        if let Some(otherwise) = otherwise {
+            condition_bodies += &self.generate_branch_body(otherwise, edoc, "true")?;
+        }
+
+        let mut dependency_bindings = String::new();
+        for dependecy in all_dependencies {
+            dependency_bindings += &self.dependecy_binding(&dependecy, &expr);
+        }
+
+        self.buffer.js.binding_zone +=
+            &self.generate_conditional_block(&expr, &condition_bodies, &dependency_bindings);
+        Ok(())
+    }
+
+    fn handle_match(&mut self, value: &str, arms: &[Arm], edoc: &ExtendedDocument) -> Result<()> {
+        let expr = ObfuscatedExpr::new();
+
+        self.buffer.html += &self.generate_conditional(&expr);
+
+        let mut condition_bodies = String::new();
+        let mut all_dependencies: HashSet<String> = HashSet::new();
+
+        let parsed_value = util::parse_js_expr(value);
+        for dep in util::extract_observables(&parsed_value) {
+            all_dependencies.insert(dep);
+        }
+
+        for arm in arms {
+            let arm_expr = if let Some(e) = &arm.expr {
+                util::parse_js_expr(e)
+            } else {
+                "true".to_string()
+            };
+
+            for dep in util::extract_observables(&arm_expr) {
+                all_dependencies.insert(dep);
+            }
+
+            let condition = format!("isMatch({},{})", arm_expr, parsed_value);
+            for dep in util::extract_observables(&condition) {
+                all_dependencies.insert(dep);
+            }
+            condition_bodies += &self.generate_branch_body(&arm.body, edoc, &condition)?;
+        }
+
+        let mut dependency_bindings = String::new();
+        for dependecy in all_dependencies {
+            dependency_bindings += &self.dependecy_binding(&dependecy, &expr);
+        }
+
+        self.buffer.js.binding_zone +=
+            &self.generate_conditional_block(&expr, &condition_bodies, &dependency_bindings);
         Ok(())
     }
 }

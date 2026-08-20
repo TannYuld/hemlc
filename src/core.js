@@ -135,17 +135,46 @@ function HtmlToFragment(htmlString) {
     return template.content;
 }
 
+function isMatch(val, pattern) {
+    if (pattern === '_') return true; 
+    if (val === pattern) return true; 
+
+    if (Array.isArray(pattern) && Array.isArray(val)) {
+        if (pattern.length !== val.length) return false;
+        return pattern.every((p, i) => isMatch(val[i], p));
+    }
+
+    if (typeof pattern === 'object' && pattern !== null && val !== null) {
+        return Object.keys(pattern).every(key => isMatch(val[key], pattern[key]));
+    }
+
+    return false;
+}
+
 function If(markers, conditions) {
+    let activeBranchIndex = -1;
+
     const update = () => {
-        ClearBetweenMarkers(markers);
-        for (const cond of conditions) {
-            if (cond.condition()) {
-                const node = cond.evaluation();
-                PlaceBetweenMarkers(markers, node);
+        let matchedIndex = -1;
+        for (let i = 0; i < conditions.length; i++) {
+            if (conditions[i].condition()) {
+                matchedIndex = i;
                 break;
             }
         }
+
+        if (matchedIndex !== activeBranchIndex) {
+            ClearBetweenMarkers(markers);
+
+            if (matchedIndex !== -1) {
+                const node = conditions[matchedIndex].evaluation();
+                PlaceBetweenMarkers(markers, node);
+            }
+            
+            activeBranchIndex = matchedIndex;
+        }
     };
+
     return update;
 }
 
