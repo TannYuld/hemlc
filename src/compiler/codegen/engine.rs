@@ -86,14 +86,24 @@ impl Compiler {
     }
 
     fn generate_branch_body(
-        &self,
+        &mut self,
         nodes: &[Node],
         edoc: &ExtendedDocument,
         condition: &str,
     ) -> Result<String> {
         let mut scope_compiler = Compiler::new(self.options);
         scope_compiler.scope_id = self.scope_id.clone();
+
+        scope_compiler.buffer.js.component_function_registry = self.buffer.js.component_function_registry.clone();
+
         scope_compiler.traverse_nodes(edoc, nodes)?;
+
+        for (tag, func_name) in scope_compiler.buffer.js.component_function_registry {
+            if !self.buffer.js.component_function_registry.contains_key(&tag) {
+                self.buffer.js.component_function_registry.insert(tag, func_name);
+            }
+        }
+        self.buffer.js.component_function_zone += &scope_compiler.buffer.js.component_function_zone;
 
         let branch_html = scope_compiler.buffer.html.trim();
         let branch_vars = &scope_compiler.buffer.js.var_zone;
@@ -409,20 +419,16 @@ impl Compiler {
         }
 
         for arm in arms {
-            let arm_expr = if let Some(e) = &arm.expr {
-                util::parse_js_expr(e)
+            let condition = if let Some(expr) = &arm.expr {
+                format!("isMatch({}, {})", parsed_value, util::parse_js_expr(expr))
             } else {
                 "true".to_string()
             };
 
-            for dep in util::extract_observables(&arm_expr) {
-                all_dependencies.insert(dep);
-            }
-
-            let condition = format!("isMatch({},{})", arm_expr, parsed_value);
             for dep in util::extract_observables(&condition) {
                 all_dependencies.insert(dep);
             }
+            
             condition_bodies += &self.generate_branch_body(&arm.body, edoc, &condition)?;
         }
 
