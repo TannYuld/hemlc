@@ -88,10 +88,8 @@ pub fn extract_observables(expr: &str, known: &std::collections::HashSet<String>
                     lookahead.next();
                 }
 
-                if !is_property && next_char != '(' && next_char != ':' {
-                    if known.contains(&current_word) {
-                        deps.insert(current_word.clone());
-                    }
+                if !is_property && next_char != '(' && next_char != ':' && known.contains(&current_word) {
+                    deps.insert(current_word.clone());
                 }
                 current_word.clear();
             }
@@ -105,10 +103,8 @@ pub fn extract_observables(expr: &str, known: &std::collections::HashSet<String>
         }
     }
     
-    if !current_word.is_empty() && !is_property {
-        if known.contains(&current_word) {
-            deps.insert(current_word);
-        }
+    if !current_word.is_empty() && !is_property && known.contains(&current_word) {
+        deps.insert(current_word);
     }
     
     deps.into_iter().collect()
@@ -120,8 +116,4 @@ pub fn is_raw_variable(expr: &str) -> bool {
     if trimmed.is_empty() { return false; }
     
     trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
-}
-
-fn is_js_keyword(word: &str) -> bool {
-    matches!(word, "true" | "false" | "null" | "undefined" | "Math" | "JSON" | "window" | "document" | "console")
 }

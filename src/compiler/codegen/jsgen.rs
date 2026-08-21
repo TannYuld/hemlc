@@ -29,9 +29,6 @@ pub trait JsGenerator {
     ) -> String;
     fn component_attributes(&self, name: &str) -> String;
 
-    fn fixed_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String;
-    fn reactive_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String;
-
     fn dependecy_binding(&self, dependency: &str, expr: &ObfuscatedExpr) -> String;
 
     fn generate_variable_decleration(&self, var_name: &str, val: &Option<String>) -> String;
@@ -104,38 +101,6 @@ impl JsGenerator for Compiler {
                     target_marker.0, variable_zone, slot_content, binding_zone, func_name, js_props
                 )
             }
-        }
-    }
-
-    fn fixed_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String {
-        match self.options.codegen_strategy {
-            CodegenStrategy::AsIs => format!(
-                "
-    const marker__{0} = FindMarker(\"{0}\", frag);
-    marker__{0}.after(document.createTextNode({1}.value{2}));
-    ",
-                var_name.0, base_var, remainder
-            ),
-            CodegenStrategy::MinifyJsOnly | CodegenStrategy::MinifyAll => format!(
-                "const marker__{0}=FindMarker(\"{0}\",frag);marker__{0}.after(document.createTextNode({1}.value{2}));",
-                var_name.0, base_var, remainder
-            ),
-        }
-    }
-
-    fn reactive_value(&self, var_name: &ObfuscatedExpr, base_var: &str, remainder: &str) -> String {
-        match self.options.codegen_strategy {
-            CodegenStrategy::AsIs => format!(
-                "
-    const marker__{0} = FindMarker(\"{0}\", frag);
-    BindValue(marker__{0}, {1}, () => ({1}.value{2}));
-    ",
-                var_name.0, base_var, remainder
-            ),
-            CodegenStrategy::MinifyJsOnly | CodegenStrategy::MinifyAll => format!(
-                "const marker__{0}=FindMarker(\"{0}\",frag);BindValue(marker__{0},{1},()=>({1}.value{2}));",
-                var_name.0, base_var, remainder
-            ),
         }
     }
 
@@ -242,7 +207,10 @@ impl JsGenerator for Compiler {
     ",
                 condition, body
             ),
-            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
+                "{{condition:()=>{0},evaluation:()=>{{{1}}}}},",
+                condition, body
+            ),
         }
     }
 
@@ -264,15 +232,15 @@ impl JsGenerator for Compiler {
     ",
                 expr.0, condition_bodies, dependency_bindings
             ),
-            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
+                "const markers_{0}=FindLimitMarkers('{0}',frag);const update_{0}=If(markers_{0},[{1}]);update_{0}();{2}",
+                expr.0, condition_bodies, dependency_bindings
+            ),
         }
     }
 
     fn dependecy_binding(&self, dependency: &str, expr: &ObfuscatedExpr) -> String {
-        match self.options.codegen_strategy {
-            CodegenStrategy::AsIs => format!("{}.addSubscriber(update_{});", dependency, expr.0),
-            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
-        }
+        format!("{}.addSubscriber(update_{});", dependency, expr.0)
     }
 
     fn expr_binding(&self, expr: &ObfuscatedExpr, deps_array: &str, final_expr: &str) -> String {
@@ -281,7 +249,10 @@ impl JsGenerator for Compiler {
                 "BindExpression(FindMarker('{}', frag), {}, () => ({}));",
                 expr.0, deps_array, final_expr
             ),
-            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
+                "BindExpression(FindMarker('{}',frag),{},()=>({}));",
+                expr.0, deps_array, final_expr
+            ),
         }
     }
 
@@ -296,7 +267,10 @@ impl JsGenerator for Compiler {
     ",
                 vars, html, bindings
             ),
-            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
+                "{}const frag = HtmlToFragment(`{}`);{}return frag;",
+                vars, html, bindings
+            ),
         }
     }
 }
