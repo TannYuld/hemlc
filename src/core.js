@@ -125,6 +125,30 @@ function BindValue(marker, observable, getter = () => observable.value) {
     });
 }
 
+function BindExpression(marker, observables, getter) {
+    const evaluate = () => {
+        const val = getter();
+        return typeof val === 'function' ? val() : val;
+    };
+
+    const textNode = document.createTextNode(String(evaluate()));
+    marker.after(textNode);
+
+    if (observables && observables.length > 0) {
+        const update = () => {
+            if (!marker.isConnected && !marker.parentNode) return false;
+            textNode.textContent = String(evaluate());
+            return true;
+        };
+
+        for (const obs of observables) {
+            if (obs && typeof obs.addSubscriber === 'function') {
+                obs.addSubscriber(update);
+            }
+        }
+    }
+}
+
 function PlaceBetweenMarkers(markers, node) {
     markers[0].after(typeof node !== "object" ? document.createTextNode(node) : node);
 }
@@ -135,17 +159,46 @@ function HtmlToFragment(htmlString) {
     return template.content;
 }
 
+function isMatch(val, pattern) {
+    if (pattern === '_') return true; 
+    if (val === pattern) return true; 
+
+    if (Array.isArray(pattern) && Array.isArray(val)) {
+        if (pattern.length !== val.length) return false;
+        return pattern.every((p, i) => isMatch(val[i], p));
+    }
+
+    if (typeof pattern === 'object' && pattern !== null && val !== null) {
+        return Object.keys(pattern).every(key => isMatch(val[key], pattern[key]));
+    }
+
+    return false;
+}
+
 function If(markers, conditions) {
+    let activeBranchIndex = -1;
+
     const update = () => {
-        ClearBetweenMarkers(markers);
-        for (const cond of conditions) {
-            if (cond.condition()) {
-                const node = cond.evaluation();
-                PlaceBetweenMarkers(markers, node);
+        let matchedIndex = -1;
+        for (let i = 0; i < conditions.length; i++) {
+            if (conditions[i].condition()) {
+                matchedIndex = i;
                 break;
             }
         }
+
+        if (matchedIndex !== activeBranchIndex) {
+            ClearBetweenMarkers(markers);
+
+            if (matchedIndex !== -1) {
+                const node = conditions[matchedIndex].evaluation();
+                PlaceBetweenMarkers(markers, node);
+            }
+            
+            activeBranchIndex = matchedIndex;
+        }
     };
+
     return update;
 }
 

@@ -1,10 +1,11 @@
-use crate::{compiler::codegen::{types::{CodegenStrategy, Compiler}, util}, core::types::Attrs};
+use crate::{compiler::{codegen::{types::{CodegenStrategy, Compiler}, util}, obfuscation::ObfuscatedExpr}, core::types::Attrs};
 
 pub trait HtmlGenerator {
     fn user_script_block(&self, content: &str) -> String;
     fn main_js_block(&self, script: &str) -> String;
     fn core_js_block(&self, script: &str) -> String;
     fn generate_comment(&self, comment:&str) -> String;
+    fn generate_conditional(&self, expr: &ObfuscatedExpr) -> String;
 }
 
 impl HtmlGenerator for Compiler {
@@ -81,6 +82,15 @@ impl HtmlGenerator for Compiler {
             format!("<!--{}-->", comment)
         }else {
             String::new()
+        }
+    }
+    
+    fn generate_conditional(&self, expr: &ObfuscatedExpr) -> String {
+        let (left, right) = expr.generate_marker_pairs();
+        if self.options.codegen_strategy != CodegenStrategy::MinifyAll {
+            format!("{}\n{}", left, right)
+        } else {
+            format!("{}{}", left, right)
         }
     }
 }

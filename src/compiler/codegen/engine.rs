@@ -8,16 +8,17 @@ use crate::{
             types::{CodegenStrategy, Compiler, CompilerOptions},
             util,
         },
-        obfuscation::ObfuscatedExpr
+        obfuscation::ObfuscatedExpr,
     },
     core::{
         error::{CompileError, Result},
         types::{
-            Attrs, ComponentDocument, ComponentProperties, EVENT_HANDLER_ATTR_NAMES, ExtendedDocument, Node, NodeKind
+            Arm, Attrs, Branch, ComponentDocument, ComponentProperties, EVENT_HANDLER_ATTR_NAMES,
+            ExtendedDocument, Node, NodeKind,
         },
     },
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl Compiler {
     fn scope_id(&mut self, id: ObfuscatedExpr) {
@@ -26,10 +27,29 @@ impl Compiler {
 
     pub fn compile(mut self, doc: ExtendedDocument) -> Result<String> {
         self.traverse_nodes(&doc, &doc.nodes)?;
-        Ok(self.buffer.html)
+        if self.options.codegen_strategy == CodegenStrategy::MinifyAll {
+            Ok(util::minify_html_tags(&self.buffer.html))
+        } else {
+            Ok(self.buffer.html)
+        }
+    }
+
+    fn hoist_variables(&mut self, nodes: &[Node]) {
+        for node in nodes {
+            match &node.kind {
+                NodeKind::Var { name, .. } => {
+                    self.known_observables.insert(name.to_string());
+                }
+                NodeKind::Element { children, .. } => {
+                    self.hoist_variables(children);
+                }
+                _ => {}
+            }
+        }
     }
 
     fn traverse_nodes(&mut self, doc: &ExtendedDocument, nodes: &[Node]) -> Result<()> {
+        self.hoist_variables(nodes);
         for node in nodes {
             self.traverse_node(node, doc)?;
         }
@@ -46,6 +66,7 @@ impl Compiler {
 
         for prop in &comp.properties {
             let ComponentProperties::Attribute(name, ..) = prop;
+            sub_compiler.known_observables.insert(name.to_string());
             sub_compiler.buffer.js.var_zone += sub_compiler.component_attributes(name).as_str();
         }
 
@@ -66,10 +87,11 @@ impl Compiler {
         sub_compiler.traverse_nodes(&comp.edoc, component_nodes)?;
 
         let html_string = if compiler_options.codegen_strategy == CodegenStrategy::MinifyAll {
-            &sub_compiler.buffer.html.replace("> <", "><")
+            util::minify_html_tags(&sub_compiler.buffer.html)
         } else {
-            &sub_compiler.buffer.html.clone()
+            sub_compiler.buffer.html.clone()
         };
+
         let js_vars = &sub_compiler.buffer.js.var_zone;
         let js_bindings = &sub_compiler.buffer.js.binding_zone;
 
@@ -82,6 +104,27 @@ impl Compiler {
             js_bindings,
             nested_functions,
         ))
+    }
+
+    fn generate_branch_body(
+        &mut self,
+        nodes: &[Node],
+        edoc: &ExtendedDocument,
+        condition: &str,
+    ) -> Result<String> {
+        let mut sub_compiler = Compiler::new_subcompiler(self);
+
+        sub_compiler.traverse_nodes(edoc, nodes)?;
+
+        self.merge_with_subcompiler(&sub_compiler);
+
+        let branch_html = sub_compiler.buffer.html.trim();
+        let branch_vars = &sub_compiler.buffer.js.var_zone;
+        let branch_bindings = &sub_compiler.buffer.js.binding_zone;
+
+        let body = self.generate_block_body(branch_vars, branch_html, branch_bindings);
+
+        Ok(self.generate_condition_body(condition, &body))
     }
 
     fn traverse_node(&mut self, node: &Node, edoc: &ExtendedDocument) -> Result<()> {
@@ -108,6 +151,11 @@ impl Compiler {
             } => self.handle_unknown(tag, attrs, children, edoc)?,
             NodeKind::Slot => self.handle_slot()?,
             NodeKind::Var { name, value } => self.handle_var(name, value)?,
+            NodeKind::If {
+                branches,
+                otherwise,
+            } => self.handle_if(branches, otherwise, edoc)?,
+            NodeKind::Match { value, arms } => self.handle_match(value, arms, edoc)?,
             _ => {}
         }
         Ok(())
@@ -198,7 +246,9 @@ impl Compiler {
             && tag.eq_ignore_ascii_case("style")
             && attrs.exist("scoped")
         {
-            return Err(CompileError::plain("`scoped` attribute can only be used in an component document."))
+            return Err(CompileError::plain(
+                "`scoped` attribute can only be used in an component document.",
+            ));
         }
 
         self.buffer.html += &htmlgen::build_open_tag(tag, attrs, false);
@@ -230,28 +280,27 @@ impl Compiler {
             )));
         }
 
+        let expr_content = name[1..name.len() - 1].trim();
         let obfuscated_var = ObfuscatedExpr::new();
 
-        let clean_name = if name.starts_with('{') && name.ends_with('}') {
-            &name[1..name.len() - 1]
+        self.buffer.html += &obfuscated_var.generate_marker();
+
+        let final_expr = if expr_content.starts_with("() =>") || expr_content.starts_with("()=>") || expr_content.starts_with("function") {
+            expr_content.to_string()
+        } else if util::is_raw_variable(expr_content) {
+            format!("{}.value", expr_content)
         } else {
-            name
+            expr_content.to_string()
+        };
+        
+        let deps = util::extract_observables(&final_expr, &self.known_observables);
+        let deps_array = if fixed || deps.is_empty() {
+            "[]".to_string()
+        } else {
+            format!("[{}]", deps.join(", "))
         };
 
-        let end_of_base = clean_name
-            .find(['.', '['])
-            .unwrap_or(clean_name.len());
-        let base_var = &clean_name[..end_of_base];
-        let remainder = &clean_name[end_of_base..];
-
-        self.buffer.html += obfuscated_var.generate_marker().as_str();
-
-        self.buffer.js.binding_zone += if fixed {
-            self.fixed_value(&obfuscated_var, base_var, remainder)
-        } else {
-            self.reactive_value(&obfuscated_var, base_var, remainder)
-        }
-        .as_str();
+        self.buffer.js.binding_zone += &self.expr_binding(&obfuscated_var, &deps_array, &final_expr);
         Ok(())
     }
 
@@ -334,6 +383,76 @@ impl Compiler {
 
     fn handle_var(&mut self, name: &str, value: &Option<String>) -> Result<()> {
         self.buffer.js.var_zone += &self.generate_variable_decleration(name, value);
+        Ok(())
+    }
+
+    fn handle_if(
+        &mut self,
+        branches: &[Branch],
+        otherwise: &Option<Vec<Node>>,
+        edoc: &ExtendedDocument,
+    ) -> Result<()> {
+        let expr = ObfuscatedExpr::new();
+
+        self.buffer.html += &self.generate_conditional(&expr);
+
+        let mut condition_bodies = String::new();
+        let mut all_dependencies: HashSet<String> = HashSet::new();
+        for branch in branches {
+            let condition = util::parse_js_expr(&branch.condition);
+            for dep in util::extract_observables(&condition, &self.known_observables) {
+                all_dependencies.insert(dep);
+            }
+            condition_bodies += &self.generate_branch_body(&branch.body, edoc, &condition)?;
+        }
+        if let Some(otherwise) = otherwise {
+            condition_bodies += &self.generate_branch_body(otherwise, edoc, "true")?;
+        }
+
+        let mut dependency_bindings = String::new();
+        for dependecy in all_dependencies {
+            dependency_bindings += &self.dependecy_binding(&dependecy, &expr);
+        }
+
+        self.buffer.js.binding_zone +=
+            &self.generate_conditional_block(&expr, &condition_bodies, &dependency_bindings);
+        Ok(())
+    }
+
+    fn handle_match(&mut self, value: &str, arms: &[Arm], edoc: &ExtendedDocument) -> Result<()> {
+        let expr = ObfuscatedExpr::new();
+
+        self.buffer.html += &self.generate_conditional(&expr);
+
+        let mut condition_bodies = String::new();
+        let mut all_dependencies: HashSet<String> = HashSet::new();
+
+        let parsed_value = util::parse_js_expr(value);
+        for dep in util::extract_observables(&parsed_value, &self.known_observables) {
+            all_dependencies.insert(dep);
+        }
+
+        for arm in arms {
+            let condition = if let Some(expr) = &arm.expr {
+                format!("isMatch({}, {})", parsed_value, util::parse_js_expr(expr))
+            } else {
+                "true".to_string()
+            };
+
+            for dep in util::extract_observables(&condition, &self.known_observables) {
+                all_dependencies.insert(dep);
+            }
+
+            condition_bodies += &self.generate_branch_body(&arm.body, edoc, &condition)?;
+        }
+
+        let mut dependency_bindings = String::new();
+        for dependecy in all_dependencies {
+            dependency_bindings += &self.dependecy_binding(&dependecy, &expr);
+        }
+
+        self.buffer.js.binding_zone +=
+            &self.generate_conditional_block(&expr, &condition_bodies, &dependency_bindings);
         Ok(())
     }
 }
