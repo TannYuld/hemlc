@@ -45,6 +45,7 @@ pub trait JsGenerator {
     fn generate_block_body(&self, vars: &str, html: &str, bindings: &str) -> String;
 
     fn assemble_js(&self) -> String;
+    fn expr_binding(&self, expr: &ObfuscatedExpr, deps_array: &str, final_expr: &str) -> String;
 }
 
 impl JsGenerator for Compiler {
@@ -270,6 +271,16 @@ impl JsGenerator for Compiler {
     fn dependecy_binding(&self, dependency: &str, expr: &ObfuscatedExpr) -> String {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => format!("{}.addSubscriber(update_{});", dependency, expr.0),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
+        }
+    }
+
+    fn expr_binding(&self, expr: &ObfuscatedExpr, deps_array: &str, final_expr: &str) -> String {
+        match self.options.codegen_strategy {
+            CodegenStrategy::AsIs => format!(
+                "BindExpression(FindMarker('{}', frag), {}, () => ({}));",
+                expr.0, deps_array, final_expr
+            ),
             CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(""),
         }
     }

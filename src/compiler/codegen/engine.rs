@@ -30,7 +30,22 @@ impl Compiler {
         Ok(self.buffer.html)
     }
 
+    fn hoist_variables(&mut self, nodes: &[Node]) {
+        for node in nodes {
+            match &node.kind {
+                NodeKind::Var { name, .. } => {
+                    self.known_observables.insert(name.to_string());
+                }
+                NodeKind::Element { children, .. } => {
+                    self.hoist_variables(children);
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn traverse_nodes(&mut self, doc: &ExtendedDocument, nodes: &[Node]) -> Result<()> {
+        self.hoist_variables(nodes);
         for node in nodes {
             self.traverse_node(node, doc)?;
         }
@@ -47,6 +62,7 @@ impl Compiler {
 
         for prop in &comp.properties {
             let ComponentProperties::Attribute(name, ..) = prop;
+            sub_compiler.known_observables.insert(name.to_string());
             sub_compiler.buffer.js.var_zone += sub_compiler.component_attributes(name).as_str();
         }
 
@@ -91,23 +107,15 @@ impl Compiler {
         edoc: &ExtendedDocument,
         condition: &str,
     ) -> Result<String> {
-        let mut scope_compiler = Compiler::new(self.options);
-        scope_compiler.scope_id = self.scope_id.clone();
+        let mut sub_compiler = Compiler::new_subcompiler(self);
 
-        scope_compiler.buffer.js.component_function_registry = self.buffer.js.component_function_registry.clone();
+        sub_compiler.traverse_nodes(edoc, nodes)?;
 
-        scope_compiler.traverse_nodes(edoc, nodes)?;
+        self.merge_with_subcompiler(&sub_compiler);
 
-        for (tag, func_name) in scope_compiler.buffer.js.component_function_registry {
-            if !self.buffer.js.component_function_registry.contains_key(&tag) {
-                self.buffer.js.component_function_registry.insert(tag, func_name);
-            }
-        }
-        self.buffer.js.component_function_zone += &scope_compiler.buffer.js.component_function_zone;
-
-        let branch_html = scope_compiler.buffer.html.trim();
-        let branch_vars = &scope_compiler.buffer.js.var_zone;
-        let branch_bindings = &scope_compiler.buffer.js.binding_zone;
+        let branch_html = sub_compiler.buffer.html.trim();
+        let branch_vars = &sub_compiler.buffer.js.var_zone;
+        let branch_bindings = &sub_compiler.buffer.js.binding_zone;
 
         let body = self.generate_block_body(branch_vars, branch_html, branch_bindings);
 
@@ -260,6 +268,7 @@ impl Compiler {
     }
 
     fn handle_value(&mut self, name: &str, fixed: bool) -> Result<()> {
+        println!("Name:{}", name);
         if !name.starts_with('{') || !name.ends_with('}') {
             return Err(CompileError::plain(format!(
                 "Invalid value name `{}`. Variables must be wrapped in curly braces. Did you mean `{{{}}}`?",
@@ -267,26 +276,29 @@ impl Compiler {
             )));
         }
 
+        let expr_content = name[1..name.len() - 1].trim();
         let obfuscated_var = ObfuscatedExpr::new();
 
-        let clean_name = if name.starts_with('{') && name.ends_with('}') {
-            &name[1..name.len() - 1]
+        self.buffer.html += &obfuscated_var.generate_marker();
+
+        let final_expr = if expr_content.starts_with("() =>") || expr_content.starts_with("()=>") || expr_content.starts_with("function") {
+            expr_content.to_string()
+        } else if util::is_raw_variable(expr_content) {
+            format!("{}.value", expr_content)
         } else {
-            name
+            expr_content.to_string()
+        };
+        println!("Known:{:#?}", &self.known_observables);
+        
+        let deps = util::extract_observables(&final_expr, &self.known_observables);
+        println!("deps:{:#?}", &deps);
+        let deps_array = if fixed || deps.is_empty() {
+            "[]".to_string()
+        } else {
+            format!("[{}]", deps.join(", "))
         };
 
-        let end_of_base = clean_name.find(['.', '[']).unwrap_or(clean_name.len());
-        let base_var = &clean_name[..end_of_base];
-        let remainder = &clean_name[end_of_base..];
-
-        self.buffer.html += obfuscated_var.generate_marker().as_str();
-
-        self.buffer.js.binding_zone += if fixed {
-            self.fixed_value(&obfuscated_var, base_var, remainder)
-        } else {
-            self.reactive_value(&obfuscated_var, base_var, remainder)
-        }
-        .as_str();
+        self.buffer.js.binding_zone += &self.expr_binding(&obfuscated_var, &deps_array, &final_expr);
         Ok(())
     }
 
@@ -386,7 +398,7 @@ impl Compiler {
         let mut all_dependencies: HashSet<String> = HashSet::new();
         for branch in branches {
             let condition = util::parse_js_expr(&branch.condition);
-            for dep in util::extract_observables(&condition) {
+            for dep in util::extract_observables(&condition, &self.known_observables) {
                 all_dependencies.insert(dep);
             }
             condition_bodies += &self.generate_branch_body(&branch.body, edoc, &condition)?;
@@ -414,7 +426,7 @@ impl Compiler {
         let mut all_dependencies: HashSet<String> = HashSet::new();
 
         let parsed_value = util::parse_js_expr(value);
-        for dep in util::extract_observables(&parsed_value) {
+        for dep in util::extract_observables(&parsed_value, &self.known_observables) {
             all_dependencies.insert(dep);
         }
 
@@ -425,10 +437,10 @@ impl Compiler {
                 "true".to_string()
             };
 
-            for dep in util::extract_observables(&condition) {
+            for dep in util::extract_observables(&condition, &self.known_observables) {
                 all_dependencies.insert(dep);
             }
-            
+
             condition_bodies += &self.generate_branch_body(&arm.body, edoc, &condition)?;
         }
 

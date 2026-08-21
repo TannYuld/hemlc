@@ -54,13 +54,25 @@ pub fn generate_html_from_attrs(attrs: &Attrs) -> String {
 }
 
 /// Extract `[myObservable]` from condition of such conditionals `<if condition="{myObservable.value === 3 && myNonObservable === 5}">`
-pub fn extract_observables(expr: &str) -> Vec<String> {
+/// It only accept values from known observable list.
+pub fn extract_observables(expr: &str, known: &std::collections::HashSet<String>) -> Vec<String> {
     let mut deps = std::collections::HashSet::new();
     let mut chars = expr.chars().peekable();
     let mut current_word = String::new();
     let mut is_property = false;
+    let mut in_quote: Option<char> = None;
 
     while let Some(&c) = chars.peek() {
+        if let Some(quote) = in_quote {
+            if c == quote { in_quote = None; }
+            chars.next();
+            continue;
+        } else if c == '\'' || c == '"' || c == '`' {
+            in_quote = Some(c);
+            chars.next();
+            continue;
+        }
+
         if c.is_ascii_alphabetic() || c == '_' || c == '$' || (c.is_ascii_digit() && !current_word.is_empty()) {
             current_word.push(c);
             chars.next();
@@ -68,7 +80,6 @@ pub fn extract_observables(expr: &str) -> Vec<String> {
             if !current_word.is_empty() {
                 let mut next_char = ' ';
                 let mut lookahead = chars.clone();
-                
                 while let Some(&nc) = lookahead.peek() {
                     if !nc.is_ascii_whitespace() {
                         next_char = nc;
@@ -77,8 +88,10 @@ pub fn extract_observables(expr: &str) -> Vec<String> {
                     lookahead.next();
                 }
 
-                if !is_property && next_char != '(' && next_char != ':' && !is_js_keyword(&current_word) {
-                    deps.insert(current_word.clone());
+                if !is_property && next_char != '(' && next_char != ':' {
+                    if known.contains(&current_word) {
+                        deps.insert(current_word.clone());
+                    }
                 }
                 current_word.clear();
             }
@@ -92,11 +105,21 @@ pub fn extract_observables(expr: &str) -> Vec<String> {
         }
     }
     
-    if !current_word.is_empty() && !is_property && !is_js_keyword(&current_word) {
-        deps.insert(current_word);
+    if !current_word.is_empty() && !is_property {
+        if known.contains(&current_word) {
+            deps.insert(current_word);
+        }
     }
     
     deps.into_iter().collect()
+}
+
+/// Check weather `kakabok` from `<value name="{kakabok}" />` needs a `.value` suffix.
+pub fn is_raw_variable(expr: &str) -> bool {
+    let trimmed = expr.trim();
+    if trimmed.is_empty() { return false; }
+    
+    trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
 }
 
 fn is_js_keyword(word: &str) -> bool {

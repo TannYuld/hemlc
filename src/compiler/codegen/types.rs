@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::{compiler::{obfuscation::ObfuscatedExpr}, core::error::CompileError};
 
@@ -17,7 +17,8 @@ pub struct OutputBuffer {
 pub struct Compiler {
     pub buffer: OutputBuffer,
     pub options: CompilerOptions,
-    pub scope_id: Option<ObfuscatedExpr>
+    pub scope_id: Option<ObfuscatedExpr>,
+    pub known_observables: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -60,7 +61,33 @@ impl Compiler {
             buffer: OutputBuffer::new(),
             options,
             scope_id: None,
+            known_observables: HashSet::new(),
         }
+    }
+
+    /// Spawns a new sub-compiler that inherits the parent's scoping, 
+    pub fn new_subcompiler(parent: &Self) -> Self {
+        let mut sub_compiler = Self {
+            buffer: OutputBuffer::new(),
+            options: parent.options,
+            scope_id: parent.scope_id.clone(),
+            known_observables: parent.known_observables.clone(),
+        };
+
+        sub_compiler.buffer.js.component_function_registry = 
+            parent.buffer.js.component_function_registry.clone();
+
+        sub_compiler
+    }
+
+    /// Merges a subcompiler back into its upper-compiler
+    pub fn merge_with_subcompiler(&mut self, sub_compiler: &Self) {
+        for (tag, func_name) in &sub_compiler.buffer.js.component_function_registry {
+            if !self.buffer.js.component_function_registry.contains_key(tag) {
+                self.buffer.js.component_function_registry.insert(tag.clone(), func_name.clone());
+            }
+        }
+        self.buffer.js.component_function_zone += &sub_compiler.buffer.js.component_function_zone;
     }
 }
 

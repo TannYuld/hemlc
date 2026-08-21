@@ -125,6 +125,30 @@ function BindValue(marker, observable, getter = () => observable.value) {
     });
 }
 
+function BindExpression(marker, observables, getter) {
+    const evaluate = () => {
+        const val = getter();
+        return typeof val === 'function' ? val() : val;
+    };
+
+    const textNode = document.createTextNode(String(evaluate()));
+    marker.after(textNode);
+
+    if (observables && observables.length > 0) {
+        const update = () => {
+            if (!marker.isConnected && !marker.parentNode) return false;
+            textNode.textContent = String(evaluate());
+            return true;
+        };
+
+        for (const obs of observables) {
+            if (obs && typeof obs.addSubscriber === 'function') {
+                obs.addSubscriber(update);
+            }
+        }
+    }
+}
+
 function PlaceBetweenMarkers(markers, node) {
     markers[0].after(typeof node !== "object" ? document.createTextNode(node) : node);
 }
