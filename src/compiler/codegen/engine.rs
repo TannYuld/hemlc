@@ -27,7 +27,11 @@ impl Compiler {
 
     pub fn compile(mut self, doc: ExtendedDocument) -> Result<String> {
         self.traverse_nodes(&doc, &doc.nodes)?;
-        Ok(self.buffer.html)
+        if self.options.codegen_strategy == CodegenStrategy::MinifyAll {
+            Ok(util::minify_html_tags(&self.buffer.html))
+        } else {
+            Ok(self.buffer.html)
+        }
     }
 
     fn hoist_variables(&mut self, nodes: &[Node]) {
@@ -83,10 +87,11 @@ impl Compiler {
         sub_compiler.traverse_nodes(&comp.edoc, component_nodes)?;
 
         let html_string = if compiler_options.codegen_strategy == CodegenStrategy::MinifyAll {
-            &sub_compiler.buffer.html.replace("> <", "><")
+            util::minify_html_tags(&sub_compiler.buffer.html)
         } else {
-            &sub_compiler.buffer.html.clone()
+            sub_compiler.buffer.html.clone()
         };
+
         let js_vars = &sub_compiler.buffer.js.var_zone;
         let js_bindings = &sub_compiler.buffer.js.binding_zone;
 
@@ -268,7 +273,6 @@ impl Compiler {
     }
 
     fn handle_value(&mut self, name: &str, fixed: bool) -> Result<()> {
-        println!("Name:{}", name);
         if !name.starts_with('{') || !name.ends_with('}') {
             return Err(CompileError::plain(format!(
                 "Invalid value name `{}`. Variables must be wrapped in curly braces. Did you mean `{{{}}}`?",
@@ -288,10 +292,8 @@ impl Compiler {
         } else {
             expr_content.to_string()
         };
-        println!("Known:{:#?}", &self.known_observables);
         
         let deps = util::extract_observables(&final_expr, &self.known_observables);
-        println!("deps:{:#?}", &deps);
         let deps_array = if fixed || deps.is_empty() {
             "[]".to_string()
         } else {

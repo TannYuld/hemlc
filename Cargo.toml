@@ -1,6 +1,6 @@
 [package]
 name = "hemlc"
-version = "0.0.32"
+version = "0.0.33"
 edition = "2024"
 description = "Compiler for HEML (Hyperextended Markup Language): HTML plus imports, components and control flow"
 license = "MIT"
