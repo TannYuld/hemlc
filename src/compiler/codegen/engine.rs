@@ -156,6 +156,13 @@ impl Compiler {
                 otherwise,
             } => self.handle_if(branches, otherwise, edoc)?,
             NodeKind::Match { value, arms } => self.handle_match(value, arms, edoc)?,
+            NodeKind::For {
+                each,
+                binding,
+                index,
+                key,
+                body,
+            } => self.handle_for(each, binding, index, key, body, edoc)?,
             _ => {}
         }
         Ok(())
@@ -285,14 +292,17 @@ impl Compiler {
 
         self.buffer.html += &obfuscated_var.generate_marker();
 
-        let final_expr = if expr_content.starts_with("() =>") || expr_content.starts_with("()=>") || expr_content.starts_with("function") {
+        let final_expr = if expr_content.starts_with("() =>")
+            || expr_content.starts_with("()=>")
+            || expr_content.starts_with("function")
+        {
             expr_content.to_string()
-        } else if util::is_raw_variable(expr_content) {
+        } else if util::is_raw_variable(expr_content) && !self.known_locals.contains(expr_content) {
             format!("{}.value", expr_content)
         } else {
             expr_content.to_string()
         };
-        
+
         let deps = util::extract_observables(&final_expr, &self.known_observables);
         let deps_array = if fixed || deps.is_empty() {
             "[]".to_string()
@@ -300,7 +310,8 @@ impl Compiler {
             format!("[{}]", deps.join(", "))
         };
 
-        self.buffer.js.binding_zone += &self.expr_binding(&obfuscated_var, &deps_array, &final_expr);
+        self.buffer.js.binding_zone +=
+            &self.expr_binding(&obfuscated_var, &deps_array, &final_expr);
         Ok(())
     }
 
@@ -453,6 +464,74 @@ impl Compiler {
 
         self.buffer.js.binding_zone +=
             &self.generate_conditional_block(&expr, &condition_bodies, &dependency_bindings);
+        Ok(())
+    }
+
+    fn handle_for(
+        &mut self,
+        each: &str,
+        bindings: &str,
+        index: &Option<String>,
+        key: &Option<String>,
+        body: &[Node],
+        edoc: &ExtendedDocument,
+    ) -> Result<()> {
+        let expr = ObfuscatedExpr::new();
+
+        self.buffer.html += &self.generate_conditional(&expr);
+
+        let list_observable = util::parse_js_expr(each);
+        let index_var = index.clone().unwrap_or_else(|| "i".to_string());
+
+        let key_expr = if let Some(k) = key {
+            util::parse_js_expr(k)
+        } else {
+            index_var.clone()
+        };
+
+        let mut sub_compiler = Compiler::new_subcompiler(self);
+
+        sub_compiler.known_observables.insert(bindings.to_string());
+        sub_compiler.known_observables.insert(index_var.clone());
+
+        sub_compiler.known_locals.insert(bindings.to_string());
+        sub_compiler.known_locals.insert(index_var.clone());
+
+        sub_compiler.traverse_nodes(edoc, body)?;
+
+        self.merge_with_subcompiler(&sub_compiler);
+
+        let branch_html = sub_compiler.buffer.html.trim();
+        let branch_vars = &sub_compiler.buffer.js.var_zone;
+        let branch_bindings = &sub_compiler.buffer.js.binding_zone;
+
+        let render_item_body = format!(
+            "
+            {}
+            const frag = HtmlToFragment(`{}`);
+            {}
+            return frag;
+            ",
+            branch_vars, branch_html, branch_bindings
+        );
+
+        let js_logic = format!(
+            "
+    const markers_{0} = FindLimitMarkers('{0}', frag);
+    const update_{0} = For(
+        markers_{0},
+        {1},
+        ({2}, {3}) => ({4}),
+        ({2}, {3}) => {{
+            {5}
+        }}
+    );
+    update_{0}();
+    ",
+            expr.0, list_observable, bindings, index_var, key_expr, render_item_body
+        );
+
+        self.buffer.js.binding_zone += &js_logic;
         Ok(())
     }
 }
