@@ -14,8 +14,10 @@ OPTIONS
                            for several (default: alongside each input)
     -w, --watch            rebuild whenever a page or one of its components
                            changes; Ctrl-C to stop
-    -m  --minify <level>   choose how much to minify output html. 
-                           0 = Minify None, 1 = Minify Js Only, 2 = Minify All (Default 2)
+    -m  --minify <level>   choose how much to minify output html. (Default 2)
+                           0 = Minify None
+                           1 = Minify Js Only
+                           2 = Minify All
         --check            parse and validate only, write nothing
     -q, --quiet            only report errors
     -V, --version          show version
