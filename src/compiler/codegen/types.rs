@@ -19,6 +19,7 @@ pub struct Compiler {
     pub options: CompilerOptions,
     pub scope_id: Option<ObfuscatedExpr>,
     pub known_observables: HashSet<String>,
+    pub known_locals: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -62,6 +63,7 @@ impl Compiler {
             options,
             scope_id: None,
             known_observables: HashSet::new(),
+            known_locals: HashSet::new(),
         }
     }
 
@@ -72,6 +74,7 @@ impl Compiler {
             options: parent.options,
             scope_id: parent.scope_id.clone(),
             known_observables: parent.known_observables.clone(),
+            known_locals: parent.known_locals.clone()
         };
 
         sub_compiler.buffer.js.component_function_registry = 
