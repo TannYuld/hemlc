@@ -316,7 +316,7 @@ impl<'a, 'b> Parser<'a, 'b> {
                 path: require("name")?,
                 body: children,
             },
-            "children" => NodeKind::Slot,
+            "children" => NodeKind::Slot { attrs: owned_attrs},
             _ if is_html_element(&lower) | is_mathml_element(&lower) | is_svg_element(&lower) => {
                 NodeKind::Element {
                     tag: lower.clone(),

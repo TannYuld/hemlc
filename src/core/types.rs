@@ -162,7 +162,9 @@ pub enum NodeKind {
     },
     // ---- HEML - Component -----------------------------------------------------
     /// `<children/>` inside a component definition.
-    Slot,
+    Slot{
+        attrs: Attrs
+    },
     Attribute {
         name: String,
         optional: bool,

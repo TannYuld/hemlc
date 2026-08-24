@@ -7,16 +7,15 @@ use crate::compiler::{
 };
 
 pub trait JsGenerator {
-    fn slot_element_replace(&self, name: &ObfuscatedExpr) -> String;
+    fn slot_element_replace(&self, name: &ObfuscatedExpr, args: &str, slot_name: &str) -> String;
 
     fn component_initialization(
         &self,
         func_name: &str,
         target_marker: &ObfuscatedExpr,
         js_props: &str,
-        component_content: &str,
+        slot_factories: &str,
         variable_zone: &str,
-        binding_zone: &str,
     ) -> String;
     fn component_event_handling(&self, id: &str, js_event: &str, logic: &str) -> String;
     fn component_function_declaration(
@@ -41,32 +40,47 @@ pub trait JsGenerator {
     fn generate_condition_body(&self, condition: &str, body: &str) -> String;
     fn generate_block_body(&self, vars: &str, html: &str, bindings: &str) -> String;
 
+    fn generate_slot_factory(&self, html: &str, bindings: &str) -> String;
+
     fn assemble_js(&self) -> String;
     fn expr_binding(&self, expr: &ObfuscatedExpr, deps_array: &str, final_expr: &str) -> String;
 }
 
 impl JsGenerator for Compiler {
-    fn slot_element_replace(&self, name: &ObfuscatedExpr) -> String {
+    fn slot_element_replace(&self, name: &ObfuscatedExpr, args: &str, slot_name: &str) -> String {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => {
                 format!(
                     "
     const m_{0} = FindMarker('{0}', frag);
-    if (slot_frag) {{
-        m_{0}.replaceWith(slot_frag);
-    }}else {{
+    if (slots && typeof slots['{2}'] === 'function') {{
+        m_{0}.replaceWith(slots['{2}']({1}));
+    }} else {{
         m_{0}.remove();
     }}
     ",
-                    name.0
+                    name.0, args, slot_name
                 )
             }
             CodegenStrategy::MinifyJsOnly | CodegenStrategy::MinifyAll => {
                 format!(
-                    "const m_{0}=FindMarker('{0}',frag);if(slot_frag){{m_{0}.replaceWith(slot_frag);}}else{{m_{0}.remove();}}",
-                    name.0
+                    "const m_{0}=FindMarker('{0}',frag);if(slots&&typeof slots['{2}']==='function'){{m_{0}.replaceWith(slots['{2}']({1}));}}else{{m_{0}.remove();}}",
+                    name.0, args, slot_name
                 )
             }
+        }
+    }
+
+    fn generate_slot_factory(&self, html: &str, bindings: &str) -> String {
+        match self.options.codegen_strategy {
+            CodegenStrategy::AsIs => format!(
+                "(slotProps = {{}}) => {{\n        const frag = HtmlToFragment(`{}`);\n        {}\n        return frag;\n    }}",
+                html, bindings
+            ),
+            CodegenStrategy::MinifyAll | CodegenStrategy::MinifyJsOnly => format!(
+                "(slotProps={{}})=>{{const frag=HtmlToFragment(`{}`);{}return frag;}}",
+                html, bindings
+            ),
         }
     }
 
@@ -75,30 +89,27 @@ impl JsGenerator for Compiler {
         func_name: &str,
         target_marker: &ObfuscatedExpr,
         js_props: &str,
-        slot_content: &str,
+        slot_factories: &str,
         variable_zone: &str,
-        binding_zone: &str,
     ) -> String {
         match self.options.codegen_strategy {
             CodegenStrategy::AsIs => {
                 format!(
                     "
     const target_{0} = FindMarker('{0}', frag);
-    const slot_frag_{0} = (() => {{ 
-        {1}
-        const frag = HtmlToFragment(`{2}`);
-        {3}
-        return frag;
-    }})();
-    {4}(target_{0}, {5}, slot_frag_{0});
+    {1}
+    const slots_{0} = {{
+        {2}
+    }};
+    {3}(target_{0}, {4}, slots_{0});
     ",
-                    target_marker.0, variable_zone, slot_content, binding_zone, func_name, js_props
+                    target_marker.0, variable_zone, slot_factories, func_name, js_props
                 )
             }
             CodegenStrategy::MinifyJsOnly | CodegenStrategy::MinifyAll => {
                 format!(
-                    "const target_{0}=FindMarker('{0}',frag);const slot_frag_{0}=(()=>{{{1}const frag=HtmlToFragment(`{2}`);{3}return frag;}})();{4}(target_{0},{5},slot_frag_{0});",
-                    target_marker.0, variable_zone, slot_content, binding_zone, func_name, js_props
+                    "const target_{0}=FindMarker('{0}',frag);{1}const slots_{0}={{{2}}};{3}(target_{0},{4},slots_{0});",
+                    target_marker.0, variable_zone, slot_factories, func_name, js_props
                 )
             }
         }
@@ -133,7 +144,8 @@ impl JsGenerator for Compiler {
             CodegenStrategy::AsIs => format!(
                 "
     {}
-    function {}(marker_target, props, slot_frag) {{
+    function {}(marker_target, props, slots) {{
+        const children = slots;
         {}
         const frag = HtmlToFragment(`{}`);
         {}
@@ -143,7 +155,7 @@ impl JsGenerator for Compiler {
                 nested_functions, func_name, js_vars, html_body, js_var_bindings
             ),
             CodegenStrategy::MinifyJsOnly | CodegenStrategy::MinifyAll => format!(
-                "{}function {}(marker_target,props,slot_frag){{{}const frag=HtmlToFragment(`{}`);{}marker_target.after(frag);}}",
+                "{}function {}(marker_target,props,slots){{const children=slots;{}const frag=HtmlToFragment(`{}`);{}marker_target.after(frag);}}",
                 nested_functions, func_name, js_vars, html_body, js_var_bindings
             ),
         }
