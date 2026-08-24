@@ -6,6 +6,7 @@ class ObservableExpr {
     constructor(defaultValue, subscribers) {
         this.subscribers = subscribers;
         this._value = this._wrap(defaultValue);
+        this._updateQueued = false;
 
         Object.defineProperty(this, "value", {
             get: () => this._value,
@@ -38,9 +39,13 @@ class ObservableExpr {
     }
 
     _notify() {
-        for (const sub of this.subscribers) {
-            sub();
-        }
+        if (this._updateQueued) return;
+        this._updateQueued = true;
+
+        queueMicrotask(() => {
+            this._updateQueued = false; 
+            this.subscribers = this.subscribers.filter(sub => sub() !== false);
+        });
     }
 
     _wrap(value) {
@@ -121,7 +126,9 @@ function BindValue(marker, observable, getter = () => observable.value) {
     marker.after(textNode);
 
     observable.addSubscriber(() => {
+        if (!marker.isConnected && !marker.parentNode) return false;
         textNode.textContent = getter();
+        return true;
     });
 }
 
@@ -179,6 +186,8 @@ function If(markers, conditions) {
     let activeBranchIndex = -1;
 
     const update = () => {
+        if (!markers[0].isConnected && !markers[0].parentNode) return false;
+
         let matchedIndex = -1;
         for (let i = 0; i < conditions.length; i++) {
             if (conditions[i].condition()) {
@@ -197,6 +206,8 @@ function If(markers, conditions) {
             
             activeBranchIndex = matchedIndex;
         }
+
+        return true;
     };
 
     return update;
@@ -206,6 +217,8 @@ function For(markers, listObservable, keyFn, renderItemFn) {
     let domCache = new Map();
 
     const update = () => {
+        if (!markers[0].isConnected && !markers[0].parentNode) return false;
+
         const newList = listObservable.value;
         const newCache = new Map();
 
@@ -258,6 +271,7 @@ function For(markers, listObservable, keyFn, renderItemFn) {
         });
 
         domCache = newCache;
+        return true;
     };
 
     listObservable.addSubscriber(update);

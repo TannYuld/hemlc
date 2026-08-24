@@ -242,7 +242,8 @@ impl Compiler {
     fn handle_raw(&mut self, tag: &str, attrs: &Attrs, content: &str) -> Result<()> {
         let mut content = content.to_string();
         if tag.eq_ignore_ascii_case("script") {
-            self.buffer.js.binding_zone += self.user_script_block(&content).as_str();
+            let is_async = attrs.exist("async");
+            self.buffer.js.binding_zone += self.user_script_block(&content, is_async).as_str();
             return Ok(());
         } else if let Some(scope_id) = &self.scope_id
             && tag.eq_ignore_ascii_case("style")
