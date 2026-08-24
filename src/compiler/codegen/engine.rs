@@ -345,13 +345,15 @@ impl Compiler {
                     &Self::generate_function_by_component_doc(comp, func_name, &compiler_options)?;
             }
 
-            let func_name = self.buffer.js.component_function_registry.get(tag).unwrap();
+            let func_name = self.buffer.js.component_function_registry.get(tag).unwrap().clone();
 
             let target_marker = ObfuscatedExpr::new();
             self.buffer.html += &target_marker.generate_marker();
 
-            let mut slot_compiler = Compiler::new(compiler_options);
+            let mut slot_compiler = Compiler::new_subcompiler(self);
             slot_compiler.traverse_nodes(edoc, children)?;
+
+            self.merge_with_subcompiler(&slot_compiler);
 
             let mut props_js = String::from("{");
             for (key, val) in attrs.iter() {
@@ -370,7 +372,7 @@ impl Compiler {
             };
             self.buffer.js.binding_zone += self
                 .component_initialization(
-                    func_name,
+                    &func_name,
                     &target_marker,
                     &props_js,
                     &html_string,
