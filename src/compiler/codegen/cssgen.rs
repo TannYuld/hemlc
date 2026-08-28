@@ -1,4 +1,4 @@
-use crate::compiler::codegen::HEML_SCOPE_ATTRIBUTE_KEY;
+use crate::compiler::codegen::{HEML_SCOPE_ATTRIBUTE_KEY, types::{CSSGenerator, minify}};
 
 pub fn scope_css(raw_css: &str, scope_id: &str) -> String {
     let mut scoped_css = String::new();
@@ -25,4 +25,16 @@ pub fn scope_css(raw_css: &str, scope_id: &str) -> String {
         }
     }
     scoped_css
+}
+
+impl CSSGenerator for minify::None {
+    
+}
+
+impl CSSGenerator for minify::Js {
+    
+}
+
+impl CSSGenerator for minify::All {
+    
 }

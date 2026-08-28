@@ -17,6 +17,10 @@ impl ObfuscatedExpr {
         ObfuscatedExpr(random_text())
     }
 
+    pub fn random() -> String {
+        Self::new().0
+    }
+
     pub fn generate_marker(&self) -> String {
         let mut str = self.0.clone();
         str.insert_str(0, "<!-- marker:");
@@ -32,5 +36,13 @@ impl ObfuscatedExpr {
         str_end.insert_str(0, "<!-- marker:end__");
         str_end += " -->";
         (str_start, str_end)
+    }
+
+    pub fn expr(&self) -> String {
+        self.0.clone()
+    }
+
+    pub fn expr_ref<'a>(&'a self) -> &'a str {
+        &self.0
     }
 }

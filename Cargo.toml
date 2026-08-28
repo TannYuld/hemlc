@@ -1,6 +1,6 @@
 [package]
 name = "hemlc"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 description = "Compiler for HEML (Hyperextended Markup Language): HTML plus imports, components and control flow"
 license = "MIT"
@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.6.6", features = ["derive"] }
+indoc = "2.0.7"
 notify = "8.2.0"
 rand = "0.10.2"
 self_update = { version = "0.44", features = ["archive-tar", "compression-flate2", "rustls"] }

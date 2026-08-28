@@ -15,15 +15,15 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::mpsc::channel;
 
-use crate::compiler::codegen::CodegenStrategy;
 use crate::compiler::codegen::Compiler;
-use crate::compiler::codegen::CompilerOptions;
+use crate::compiler::codegen::minify;
 use crate::compiler::resolver;
+use crate::core::error::CompileError;
+use crate::core::error::Result;
 use crate::core::lexer;
 use crate::core::parser;
 use crate::core::types::Document;
 use crate::core::types::ExtendedDocument;
-use crate::core::error::Result;
 
 pub const MIN_JS_CORE: &str = include_str!(concat!(env!("OUT_DIR"), "/core.min.js"));
 pub const HELP_MSG: &str = include_str!("./help.msg");
@@ -125,7 +125,6 @@ fn process_file(
     base_path: &Path,
     cli: &Cli,
     is_multi_file: bool,
-    options: &CompilerOptions,
 ) -> bool {
     let source = match fs::read_to_string(file_path) {
         Ok(s) => s,
@@ -181,7 +180,22 @@ fn process_file(
         return true;
     }
 
-    let doc = match Compiler::new(*options).compile(east) {
+    let compilation_result = match cli.minify {
+        Some(0)  => {
+            Compiler::<minify::None>::new(east).compile()
+        },
+        Some(1) => {
+            Compiler::<minify::Js>::new(east).compile()
+        },
+        Some(2) | None => {
+            Compiler::<minify::All>::new(east).compile()
+        },
+        _ => {
+            Err(CompileError::plain("Invalid minify level."))
+        }
+    };
+
+    let doc = match compilation_result {
         Ok(d) => d,
         Err(e) => {
             if !cli.quiet {
@@ -265,7 +279,6 @@ fn process_file(
 fn watch_files(
     cli: &Cli,
     is_multi_file: bool,
-    compiler_options: &CompilerOptions,
 ) -> notify::Result<()> {
     let (tx, rx) = channel();
     let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
@@ -339,7 +352,7 @@ fn watch_files(
                         let current_is_multi = fresh_files.len() > 1;
 
                         for (file, base) in &fresh_files {
-                            process_file(file, base, cli, current_is_multi, compiler_options);
+                            process_file(file, base, cli, current_is_multi);
                         }
                     } else {
                         if !cli.quiet {
@@ -367,7 +380,7 @@ fn watch_files(
                             }
                         }
 
-                        process_file(&path, &base_path, cli, is_multi_file, compiler_options);
+                        process_file(&path, &base_path, cli, is_multi_file);
                     }
                 }
             }
@@ -412,14 +425,6 @@ fn update_self() -> ExitCode {
     }
 }
 
-fn get_compiler_options_from_cli(cli: &Cli) -> Result<CompilerOptions> {
-    let mut compiler_options = CompilerOptions::default();
-    if let Some(minfy_elevation) = cli.minify {
-        compiler_options.codegen_strategy = CodegenStrategy::try_from(minfy_elevation)?;
-    }
-    Ok(compiler_options)
-}
-
 fn main() -> ExitCode {
     let cli = Cli::parse();
     if cli.update {
@@ -429,13 +434,6 @@ fn main() -> ExitCode {
     let mut all_success = true;
 
     let files_to_process = collect_files(&cli.inputs, cli.quiet);
-    let compiler_options = match get_compiler_options_from_cli(&cli) {
-        Ok(options) => options,
-        Err(e) => {
-            eprintln!("{}", e);
-            return ExitCode::FAILURE;
-        }
-    };
 
     if files_to_process.is_empty() {
         if !cli.quiet {
@@ -447,13 +445,13 @@ fn main() -> ExitCode {
     let is_multi_file = files_to_process.len() > 1;
 
     for (file, base) in &files_to_process {
-        if !process_file(file, base, &cli, is_multi_file, &compiler_options) {
+        if !process_file(file, base, &cli, is_multi_file) {
             all_success = false;
         }
     }
 
     if cli.watch
-        && let Err(e) = watch_files(&cli, is_multi_file, &compiler_options)
+        && let Err(e) = watch_files(&cli, is_multi_file)
     {
         if !cli.quiet {
             eprintln!("Failed to start watcher: {:?}", e);
@@ -467,3 +465,14 @@ fn main() -> ExitCode {
         ExitCode::FAILURE
     }
 }
+
+/* TODO:
+   - style/css isn't minified at all
+   - With commands like this `$ hemlc ./src/ --out ./docs/ --watch`
+     Compiled './src/components/about.heml' -> "./docs/components/about.html"
+     Compiled './src/components/home.heml' -> "./docs/components/home.html"
+     Compiled './src/index.heml' -> "./docs/index.html"`
+     components are being compiled too, even though this is not intentional.
+   - Import doesn't work without optional `as` key.
+   - custom tag names are case insensitive currently, make it case sensitive.
+*/
