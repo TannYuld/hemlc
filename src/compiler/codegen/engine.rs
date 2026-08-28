@@ -327,7 +327,10 @@ impl Compiler {
             for property in &comp.properties {
                 match property {
                     ComponentProperties::Attribute(name, optional) => {
-                        if !*optional && !attrs.exist(name) && !attrs.exist(&format!("bind:{}", name)) {
+                        if !*optional
+                            && !attrs.exist(name)
+                            && !attrs.exist(&format!("bind:{}", name))
+                        {
                             return Err(CompileError::plain("Non-optional attribute is missing."));
                         }
                     }
@@ -345,7 +348,13 @@ impl Compiler {
                     &Self::generate_function_by_component_doc(comp, func_name, &compiler_options)?;
             }
 
-            let func_name = self.buffer.js.component_function_registry.get(tag).unwrap().clone();
+            let func_name = self
+                .buffer
+                .js
+                .component_function_registry
+                .get(tag)
+                .unwrap()
+                .clone();
 
             let target_marker = ObfuscatedExpr::new();
             self.buffer.html += &target_marker.generate_marker();
@@ -356,11 +365,22 @@ impl Compiler {
             for child in children {
                 let mut is_named_slot = false;
                 match &child.kind {
-                    NodeKind::Element { tag: child_tag, children: slot_children, .. } 
-                    | NodeKind::Unknown { tag: child_tag, children: slot_children, .. } => {
+                    NodeKind::Element {
+                        tag: child_tag,
+                        children: slot_children,
+                        ..
+                    }
+                    | NodeKind::Unknown {
+                        tag: child_tag,
+                        children: slot_children,
+                        ..
+                    } => {
                         if child_tag.starts_with(&prefix) {
                             let slot_name = child_tag[prefix.len()..].to_string();
-                            slots_map.entry(slot_name).or_default().extend(slot_children.clone());
+                            slots_map
+                                .entry(slot_name)
+                                .or_default()
+                                .extend(slot_children.clone());
                             is_named_slot = true;
                         }
                     }
@@ -368,7 +388,10 @@ impl Compiler {
                 }
 
                 if !is_named_slot {
-                    slots_map.entry("default".to_string()).or_default().push(child.clone());
+                    slots_map
+                        .entry("default".to_string())
+                        .or_default()
+                        .push(child.clone());
                 }
             }
 
@@ -421,12 +444,17 @@ impl Compiler {
                 }
             }
             props_js.push('}');
-            
+
+            let final_props_js = format!(
+                "Object.assign({{}}, typeof slotProps !== 'undefined' ? slotProps : {{}}, {})",
+                props_js
+            );
+
             self.buffer.js.binding_zone += self
                 .component_initialization(
                     &func_name,
                     &target_marker,
-                    &props_js,
+                    &final_props_js,
                     &slot_factories_js,
                     &combined_var_zone,
                 )
@@ -442,21 +470,44 @@ impl Compiler {
         let slot_marker = ObfuscatedExpr::new();
         self.buffer.html += &slot_marker.generate_marker();
 
-        let slot_name = attrs.attr("name").unwrap_or(&"default".to_string()).to_string();
+        let slot_name = attrs
+            .attr("name")
+            .unwrap_or(&"default".to_string())
+            .to_string();
 
         let mut slot_args = String::from("{");
         for (key, val) in attrs.iter() {
-            if key == "name" { continue; }
-            
-            if let Some(v) = val {
-                slot_args.push_str(&format!("{}:{},", key, util::parse_js_expr(v)));
+            if key == "name" {
+                continue;
+            }
+
+            let (is_bind, actual_key) = if key.starts_with("bind:") {
+                (true, &key[5..])
             } else {
-                slot_args.push_str(&format!("{}:true,", key));
+                (false, key.as_str())
+            };
+
+            if let Some(v) = val {
+                let parsed_val = if is_bind {
+                    let stripped = if v.starts_with('{') && v.ends_with('}') {
+                        &v[1..v.len() - 1]
+                    } else {
+                        v
+                    };
+                    stripped.to_string()
+                } else {
+                    util::parse_js_expr(v)
+                };
+                slot_args.push_str(&format!("{}:{},", actual_key, parsed_val));
+            } else {
+                slot_args.push_str(&format!("{}:true,", actual_key));
             }
         }
         slot_args.push('}');
 
-        self.buffer.js.binding_zone += self.slot_element_replace(&slot_marker, &slot_args, &slot_name).as_str();
+        self.buffer.js.binding_zone += self
+            .slot_element_replace(&slot_marker, &slot_args, &slot_name)
+            .as_str();
         Ok(())
     }
 

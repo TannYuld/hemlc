@@ -17,15 +17,6 @@ class ObservableExpr {
         });
     }
 
-    // get value() {
-    //     return this._value;
-    // }
-
-    // set value(value) {
-    //     this._value = this._wrap(value);
-    //     this._notify();
-    // }
-
     getValue() {
         return this._value;
     }
@@ -43,7 +34,7 @@ class ObservableExpr {
         this._updateQueued = true;
 
         queueMicrotask(() => {
-            this._updateQueued = false; 
+            this._updateQueued = false;
             this.subscribers = this.subscribers.filter(sub => sub() !== false);
         });
     }
@@ -57,10 +48,9 @@ class ObservableExpr {
 
         return new Proxy(value, {
             get(obj, prop) {
-                if (prop === "target") {
-                    return obj;
-                }
-                return obj[prop];
+                if (prop === 'target') return obj;
+                const val = obj[prop];
+                return typeof val === 'function' ? val.bind(obj) : val;
             },
             set(obj, prop, newVal) {
                 obj[prop] = newVal;
@@ -167,8 +157,8 @@ function HtmlToFragment(htmlString) {
 }
 
 function isMatch(val, pattern) {
-    if (pattern === '_') return true; 
-    if (val === pattern) return true; 
+    if (pattern === '_') return true;
+    if (val === pattern) return true;
 
     if (Array.isArray(pattern) && Array.isArray(val)) {
         if (pattern.length !== val.length) return false;
@@ -203,7 +193,7 @@ function If(markers, conditions) {
                 const node = conditions[matchedIndex].evaluation();
                 PlaceBetweenMarkers(markers, node);
             }
-            
+
             activeBranchIndex = matchedIndex;
         }
 
