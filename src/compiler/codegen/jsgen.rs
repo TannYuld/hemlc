@@ -2,7 +2,7 @@ use crate::compiler::{
     codegen::{
         HEML_ID_ATTRIBUTE_KEY,
         types::{
-            Compiler, JSGenerator,
+            Compiler, HtmlEventList, JSGenerator,
             minify::{self, None},
         },
         util,
@@ -13,15 +13,25 @@ use indoc::indoc;
 use std::fmt::Write;
 
 impl JSGenerator for minify::None {
-    fn write_js_element_event(out: &mut String, events: super::types::HtmlEventList, id: &str) {
-        for (event_name, event_body, is_async) in events.iter() {
-            let _ = write!(
-                out,
-                r#"    frag.querySelector('[{}="{}"]').addEventListener('{}',{} (event) => {{
-        {}
-    }});
-"#,
-                HEML_ID_ATTRIBUTE_KEY, id, event_name, if *is_async {" async"} else {""}, event_body
+    fn write_js_element_event(
+        out_event_binding: &mut String,
+        out_event_element_decleration: &mut String,
+        events: HtmlEventList,
+    ) {
+        let _ = writeln!(
+            out_event_element_decleration,
+            "\tconst elm_{0} = frag.querySelector('[{1}=\"{0}\"]');",
+            events.id, HEML_ID_ATTRIBUTE_KEY,
+        );
+
+        for event in events.iter() {
+            let _ = writeln!(
+                out_event_binding,
+                "\telm_{}.addEventListener('{}',{} (event) => {{\n\t\t{}\n    }});",
+                events.id,
+                event.event_name,
+                if event.is_async { " async" } else { "" },
+                event.event_body.trim()
             );
         }
     }
@@ -32,12 +42,26 @@ impl JSGenerator for minify::None {
 }
 
 impl JSGenerator for minify::Js {
-    fn write_js_element_event(out: &mut String, events: super::types::HtmlEventList, id: &str) {
-        for (event_name, event_body, is_async) in events.iter() {
+    fn write_js_element_event(
+        out_event_binding: &mut String,
+        out_event_element_decleration: &mut String,
+        events: HtmlEventList,
+    ) {
+        let _ = write!(
+            out_event_element_decleration,
+            r#"const elm_{0}=frag.querySelector('[{1}="{0}"]');
+            "#,
+            events.id, HEML_ID_ATTRIBUTE_KEY,
+        );
+
+        for event in events.iter() {
             let _ = write!(
-                out,
-                r#"frag.querySelector('[{}="{}"]').addEventListener('{}',{}(event)=>{{{}}});"#,
-                HEML_ID_ATTRIBUTE_KEY, id, event_name, if *is_async {"async"} else {""}, event_body
+                out_event_binding,
+                r#"elm_{}.addEventListener('{}',{}(event)=>{{{}}});"#,
+                events.id,
+                event.event_name,
+                if event.is_async { "async" } else { "" },
+                event.event_body
             );
         }
     }
@@ -48,8 +72,16 @@ impl JSGenerator for minify::Js {
 }
 
 impl JSGenerator for minify::All {
-    fn write_js_element_event(out: &mut String, events: super::types::HtmlEventList, id: &str) {
-        minify::Js::write_js_element_event(out, events, id);
+    fn write_js_element_event(
+        out_event_binding: &mut String,
+        out_event_element_decleration: &mut String,
+        events: HtmlEventList,
+    ) {
+        minify::Js::write_js_element_event(
+            out_event_binding,
+            out_event_element_decleration,
+            events,
+        );
     }
 
     fn write_global_scope(out: &mut String) {

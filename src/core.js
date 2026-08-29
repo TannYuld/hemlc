@@ -157,7 +157,6 @@ function HtmlToFragment(htmlString) {
 }
 
 function isMatch(val, pattern) {
-    if (pattern === '_') return true;
     if (val === pattern) return true;
 
     if (Array.isArray(pattern) && Array.isArray(val)) {

@@ -23,7 +23,7 @@ impl HTMLGenerator for minify::None {
         physical_attrs: &super::types::PhysicalAttrs,
         is_void: bool,
     ) {
-        if physical_attrs.has_attr() {
+        if physical_attrs.has_attrs() {
             let _ = write!(
                 out,
                 "<{} {}{}>",
@@ -103,7 +103,7 @@ impl HTMLGenerator for minify::All {
         physical_attrs: &super::types::PhysicalAttrs,
         is_void: bool,
     ) {
-        if physical_attrs.has_attr() {
+        if physical_attrs.has_attrs() {
             let _ = write!(
                 out,
                 "<{} {}{}>",

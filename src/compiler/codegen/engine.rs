@@ -97,23 +97,31 @@ impl<M: minify::MinifyLevel> Compiler<M> {
         attrs: &Attrs,
         children: &[Node],
         void: bool,
-        mut output: &mut CompilerOutput,
+        output: &mut CompilerOutput,
     ) -> Result<()> {
         let mut physical_attrs = PhysicalAttrs::new();
         if let Some(scope) = &output.scope_id {
             physical_attrs.scope(scope.expr_ref());
         }
 
-        let mut events = HtmlEventList::new();
-        events.load_events_if_not(attrs, |key, val| physical_attrs.entry(key, val));
+        let events = HtmlEventList::extract_events(attrs, &mut physical_attrs);
+        let internal_element_id: String;
 
-        let internal_element_id = format!("heml_{}", ObfuscatedExpr::random());
-        if events.has_event() {
+        if !events.is_empty() {
+            internal_element_id = format!("heml_{}", ObfuscatedExpr::random());
             physical_attrs.internal_id(&internal_element_id);
-            M::write_js_element_event(&mut output.js_event_binding, events, &internal_element_id);
-        }
-        physical_attrs.merge(attrs);
 
+            let event_list = HtmlEventList {
+                id: &internal_element_id,
+                events,
+            };
+
+            M::write_js_element_event(
+                &mut output.js_event_binding,
+                &mut output.js_event_element_decleration,
+                event_list,
+            );
+        }
         M::write_open_tag(
             &mut output.html,
             tag,
@@ -123,13 +131,13 @@ impl<M: minify::MinifyLevel> Compiler<M> {
 
         if !(void && children.is_empty()) {
             self.traverse_nodes(children, output)?;
+            
             if tag == "html" {
-                M::inject_js(&mut output);
+                M::inject_js(output);
             }
 
             M::write_close_tag(&mut output.html, tag);
         }
-
         Ok(())
     }
 
