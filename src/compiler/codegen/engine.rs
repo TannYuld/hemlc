@@ -4,7 +4,7 @@ use crate::{
     compiler::{
         codegen::{
             JS_IMPORT_REGEX,
-            types::{Compiler, CompilerOutput, HtmlEventList, PhysicalAttrs, minify},
+            types::{Compiler, CompilerOutput, HtmlEventList, KnownObservables, PhysicalAttrs, minify},
             util,
         },
         obfuscation::ObfuscatedExpr,
@@ -249,31 +249,33 @@ impl<M: minify::MinifyLevel> Compiler<M> {
         output: &mut CompilerOutput,
     ) -> Result<()> {
         let expr = ObfuscatedExpr::new();
+        
+        M::write_marker_pairs(&mut output.html, &expr);
+        M::write_find_limit_markers(&mut output.marker_declaration, expr.expr_ref());
 
-        let mut condition_bodies = String::new();
+        let mut branch_bodies = String::new();
         let mut all_dependencies: HashSet<String> = HashSet::new();
         for branch in branches {
             let condition = util::parse_js_expr(&branch.condition);
             for dep in util::extract_observables(&condition, &output.known_observables) {
                 all_dependencies.insert(dep);
             }
-            condition_bodies += &self.generate_branch_body(&branch.body, &condition)?;
+            branch_bodies += &self.generate_branch_body(&branch.body, &condition, &output.known_observables)?;
         }
         if let Some(otherwise) = otherwise {
-            condition_bodies += &self.generate_branch_body(otherwise, "true")?;
+            branch_bodies += &self.generate_branch_body(otherwise, "true", &output.known_observables)?;
         }
-
-        println!("\n[YOLO]\n{}", condition_bodies);
-        // let mut dependency_bindings = String::new();
+       
+        M::write_if_statment(&mut output.block_bodied_decleration, expr.expr_ref(), &branch_bodies);
         for dependecy in all_dependencies {
-            M::write_dependecy_binding(&mut output.expr_binding, &dependecy, expr.expr_ref());
+            M::write_dependecy_binding(&mut output.block_bodied_decleration, &dependecy, expr.expr_ref());
         }
-
+        
         Ok(())
     }
 
-    fn generate_branch_body(&self, nodes: &[Node], condition: &str) -> Result<String> {
-        let mut inner_output = CompilerOutput::new().with_scope();
+    fn generate_branch_body(&self, nodes: &[Node], condition: &str, known_observables: &KnownObservables) -> Result<String> {
+        let mut inner_output = CompilerOutput::new().with_scope().with_known_observables(known_observables);
 
         self.traverse_nodes(nodes, &mut inner_output)?;
 

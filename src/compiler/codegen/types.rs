@@ -18,18 +18,22 @@ use crate::{
     },
 };
 
+pub type KnownObservables = HashSet<String>;
+
 #[derive(Debug, Clone)]
 pub struct CompilerOutput {
     pub html: String,
 
-    pub user_js_import: String,
-    pub scope_fragment_decleration: String,
-    pub var_declaration: String,
-    pub component_declaration: String,
-    pub user_js: String,
-    pub js_event_element_decleration: String,
-    pub js_event_binding: String,
-    pub expr_binding: String,
+    pub user_js_import: String,                 //#
+    pub scope_fragment_decleration: String,     //#
+    pub var_declaration: String,                //#
+    pub component_declaration: String,          //#
+    pub user_js: String,                        //#
+    pub js_event_element_decleration: String,   //#
+    pub js_event_binding: String,               //#
+    pub expr_binding: String,                   //#
+    pub marker_declaration: String,             //#
+    pub block_bodied_decleration: String,       //# If, For, Match statements
     pub component_initialization: String,
 
     pub known_observables: HashSet<String>,
@@ -48,6 +52,7 @@ pub trait JSGenerator {
     fn write_expr_bind(out: &mut String, var: &str, deps_array: &str, expr: &str);
     fn write_var_declaration(out: &mut String, var: &str, value: &Option<String>);
     fn write_dependecy_binding(out: &mut String, dependency: &str, expr: &str);
+    fn write_find_limit_markers(out: &mut String, expr: &str);
 
     fn write_if_statment(out: &mut String, expr: &str, branch_bodies: &str);
     fn generate_conditional_branch_body(html: &str, js: &str, condition: &str, vars: &str, bindings: &str,) -> String;
@@ -72,18 +77,14 @@ pub trait HTMLGenerator {
     fn inject_js(output: &mut CompilerOutput);
 }
 
-pub trait CSSGenerator {
-    // fn write_plain
-}
-
 pub mod minify {
-    use crate::compiler::codegen::types::{CSSGenerator, HTMLGenerator, JSGenerator};
+    use crate::compiler::codegen::types::{HTMLGenerator, JSGenerator};
 
     pub struct None;
     pub struct Js;
     pub struct All;
 
-    pub trait MinifyLevel: HTMLGenerator + JSGenerator + CSSGenerator {}
+    pub trait MinifyLevel: HTMLGenerator + JSGenerator {}
 
     impl MinifyLevel for None {}
     impl MinifyLevel for Js {}
@@ -120,12 +121,19 @@ impl CompilerOutput {
             js_event_element_decleration: String::default(),
             js_event_binding: String::default(),
             expr_binding: String::default(),
+            marker_declaration: String::default(),
+            block_bodied_decleration: String::default(),
             component_initialization: String::default(),
 
             known_observables: HashSet::default(),
             known_locals: HashSet::default(),
             scope_id: None,
         }
+    }
+
+    pub fn with_known_observables(mut self, known_observables: &KnownObservables) -> Self {
+        self.known_observables = known_observables.clone();
+        self
     }
 
     pub fn with_scope(self) -> Self {
@@ -148,6 +156,8 @@ impl CompilerOutput {
             self.js_event_element_decleration.as_str(),
             self.js_event_binding.as_str(),
             self.expr_binding.as_str(),
+            self.marker_declaration.as_str(),
+            self.block_bodied_decleration.as_str(),
             self.component_initialization.as_str(),
         ]
         .into_iter()
@@ -166,6 +176,8 @@ impl CompilerOutput {
             self.js_event_element_decleration.as_str(),
             self.js_event_binding.as_str(),
             self.expr_binding.as_str(),
+            self.marker_declaration.as_str(),
+            self.block_bodied_decleration.as_str(),
             self.component_initialization.as_str(),
         ]
         .into_iter()

@@ -27,7 +27,7 @@ impl JSGenerator for minify::None {
         for event in events.iter() {
             let _ = writeln!(
                 out_event_binding,
-                "\telm_{}.addEventListener('{}',{} (event) => {{\n\t\t{}\n    }});",
+                "\telm_{}.addEventListener('{}',{} (event) => {{\n\t\t{}\n\t}});",
                 events.id,
                 event.event_name,
                 if event.is_async { " async" } else { "" },
@@ -43,7 +43,7 @@ impl JSGenerator for minify::None {
     fn write_expr_bind(out: &mut String, var: &str, deps_array: &str, expr: &str) {
         let _ = write!(
             out,
-            "BindExpression(FindMarker('{}', frag), {}, () => ({}));",
+            "\tBindExpression(FindMarker('{}', frag), {}, () => ({}));",
             var, deps_array, expr
         );
     }
@@ -55,51 +55,41 @@ impl JSGenerator for minify::None {
             "undefined".to_string()
         };
 
-        let _ = write!(out, "const {} = Observable({});", var, val_expr);
+        let _ = write!(out, "\tconst {} = Observable({});", var, val_expr);
     }
 
     fn generate_conditional_branch_body(
         html: &str,
         js: &str,
         condition: &str,
-        vars: &str,
-        bindings: &str,
+        _vars: &str,
+        _bindings: &str,
     ) -> String {
         format!(
-            "
-    {{
-        condition: () => {},
-        evaluation: () => {{
-            {}
-            const frag = HtmlToFragment(`{}`);
-            {}
-            {}
-            return frag;
-        }}
-    }},
-    ",
-            condition, vars, html, bindings, js
+            "\t{{\n\t\tcondition: () => {},\n\t\tevaluation: () => {{\n\t\t\tconst frag = HtmlToFragment(`{}`);\n\t\t\t{}\n\t\t\treturn frag;\n\t\t}}\n\t}},\n",
+            condition, html, js
         )
     }
 
     fn write_if_statment(out: &mut String, expr: &str, branch_bodies: &str) {
         let _ = write!(
             out,
-            "
-    const markers_{0} = FindLimitMarkers('{0}', frag);
-    const update_{0} = If(markers_{0}, [
-        {1}
-    ]);
-    update_{0}();
-    ",
+            "\tconst update_{0} = If(markers_{0}, [\n\t\t{1}\n\t]);\n\tupdate_{0}();\n",
             expr, branch_bodies
         );
     }
-    
+
     fn write_dependecy_binding(out: &mut String, dependency: &str, expr: &str) {
-        let _ = write!(out, "{}.addSubscriber(update_{});", dependency, expr);
+        let _ = write!(out, "\t{}.addSubscriber(update_{});", dependency, expr);
     }
-    
+
+    fn write_find_limit_markers(out: &mut String, expr: &str) {
+        let _ = write!(
+            out,
+            "\tconst markers_{0} = FindLimitMarkers('{0}', frag);",
+            expr
+        );
+    }
 }
 
 impl JSGenerator for minify::Js {
@@ -110,8 +100,7 @@ impl JSGenerator for minify::Js {
     ) {
         let _ = write!(
             out_event_element_decleration,
-            r#"const elm_{0}=frag.querySelector('[{1}="{0}"]');
-            "#,
+            r#"const elm_{0}=frag.querySelector('[{1}="{0}"]');"#,
             events.id, HEML_ID_ATTRIBUTE_KEY,
         );
 
@@ -121,7 +110,7 @@ impl JSGenerator for minify::Js {
                 r#"elm_{}.addEventListener('{}',{}(event)=>{{{}}});"#,
                 events.id,
                 event.event_name,
-                if event.is_async { "async" } else { "" },
+                if event.is_async { "async " } else { "" },
                 event.event_body
             );
         }
@@ -154,18 +143,29 @@ impl JSGenerator for minify::Js {
         html: &str,
         js: &str,
         condition: &str,
-        vars: &str,
-        bindings: &str,
+        _vars: &str,
+        _bindings: &str,
     ) -> String {
-        todo!()
+        format!(
+            "{{condition:()=>{},evaluation:()=>{{const frag=HtmlToFragment(`{}`);{}return frag;}}}},",
+            condition, html, js
+        )
     }
 
     fn write_dependecy_binding(out: &mut String, dependency: &str, expr: &str) {
-        todo!()
+        let _ = write!(out, "{}.addSubscriber(update_{});", dependency, expr);
     }
-    
+
     fn write_if_statment(out: &mut String, expr: &str, branch_bodies: &str) {
-        todo!()
+        let _ = write!(
+            out,
+            "const update_{0}=If(markers_{0},[{1}]);update_{0}();",
+            expr, branch_bodies
+        );
+    }
+
+    fn write_find_limit_markers(out: &mut String, expr: &str) {
+        let _ = write!(out, "const markers_{0}=FindLimitMarkers('{0}',frag);", expr);
     }
 }
 
@@ -204,13 +204,15 @@ impl JSGenerator for minify::All {
         minify::Js::generate_conditional_branch_body(html, js, condition, vars, bindings)
     }
 
-    
     fn write_dependecy_binding(out: &mut String, dependency: &str, expr: &str) {
-        todo!()
+        minify::Js::write_dependecy_binding(out, dependency, expr);
     }
-    
+
     fn write_if_statment(out: &mut String, expr: &str, branch_bodies: &str) {
-        todo!()
+        minify::Js::write_if_statment(out, expr, branch_bodies);
+    }
+
+    fn write_find_limit_markers(out: &mut String, expr: &str) {
+        minify::Js::write_find_limit_markers(out, expr);
     }
 }
-
