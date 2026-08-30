@@ -35,7 +35,18 @@ class ObservableExpr {
 
         queueMicrotask(() => {
             this._updateQueued = false;
-            this.subscribers = this.subscribers.filter(sub => sub() !== false);
+            const currentSubs = [...this.subscribers];
+            const toRemove = new Set();
+
+            for (const sub of currentSubs) {
+                if (sub() === false) {
+                    toRemove.add(sub);
+                }
+            }
+
+            if (toRemove.size > 0) {
+                this.subscribers = this.subscribers.filter(sub => !toRemove.has(sub));
+            }
         });
     }
 
