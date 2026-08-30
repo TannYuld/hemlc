@@ -1,4 +1,6 @@
-use crate::core::types::Attrs;
+use regex::Captures;
+
+use crate::{compiler::codegen::{HEML_SCOPE_ATTRIBUTE_KEY, JS_IMPORT_REGEX}, core::types::Attrs};
 
 /// This converts `someAttr="RawText"` into `'RawText'`
 /// and `someAttr="{3}"` into `3` (Pure js block)
@@ -149,4 +151,75 @@ pub fn minify_html_tags(html: &str) -> String {
         }
     }
     result.trim().to_string()
+}
+
+pub fn extract_js_imports_and_rest(js_body: &str) -> (String, String) {
+    let mut imports = String::new();
+    let rest = JS_IMPORT_REGEX
+        .replace_all(js_body, |caps: &Captures| {
+            if let Some(ignored_match) = caps.get(1) {
+                ignored_match.as_str().to_string()
+            } else if let Some(import_match) = caps.get(2) {
+                imports.push_str(import_match.as_str());
+                imports.push('\n');
+
+                String::new()
+            } else {
+                String::new()
+            }
+        })
+        .into_owned();
+    (imports, rest)
+}
+
+pub fn normalize_indentation(text: &str, padding: &str) -> String {
+    let min_indent = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.chars().take_while(|c| c.is_whitespace()).count())
+        .min()
+        .unwrap_or(0);
+
+    text.lines()
+        .map(|line| {
+            if line.trim().is_empty() {
+                String::new()
+            } else {
+                let stripped = if line.len() >= min_indent {
+                    &line[min_indent..]
+                } else {
+                    line.trim_start()
+                };
+                format!("{}{}", padding, stripped)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn scope_css(raw_css: &str, scope_id: &str) -> String {
+    let mut scoped_css = String::new();
+
+    for block in raw_css.split('}') {
+        if block.trim().is_empty() {
+            continue;
+        }
+
+        if let Some((selectors, rules)) = block.split_once('{') {
+            let scoped_selectors: Vec<String> = selectors
+                .split(',')
+                .map(|s| {
+                    format!(
+                        "{}[{}=\"{}\"]",
+                        s.trim(),
+                        HEML_SCOPE_ATTRIBUTE_KEY,
+                        scope_id
+                    )
+                })
+                .collect();
+
+            scoped_css += &format!("{} {{{}}}\n", scoped_selectors.join(", "), rules);
+        }
+    }
+    scoped_css
 }

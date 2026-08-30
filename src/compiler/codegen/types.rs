@@ -22,12 +22,14 @@ use crate::{
 pub struct CompilerOutput {
     pub html: String,
 
+    pub user_js_import: String,
     pub scope_fragment_decleration: String,
     pub var_declaration: String,
     pub component_declaration: String,
+    pub user_js: String,
     pub js_event_element_decleration: String,
     pub js_event_binding: String,
-    pub var_binding: String,
+    pub expr_binding: String,
     pub component_initialization: String,
 
     pub known_observables: HashSet<String>,
@@ -42,6 +44,13 @@ pub trait JSGenerator {
         events: HtmlEventList,
     );
     fn write_global_scope(out: &mut String);
+
+    fn write_expr_bind(out: &mut String, var: &str, deps_array: &str, expr: &str);
+    fn write_var_declaration(out: &mut String, var: &str, value: &Option<String>);
+    fn write_dependecy_binding(out: &mut String, dependency: &str, expr: &str);
+
+    fn write_if_statment(out: &mut String, expr: &str, branch_bodies: &str);
+    fn generate_conditional_branch_body(html: &str, js: &str, condition: &str, vars: &str, bindings: &str,) -> String;
 }
 
 pub trait HTMLGenerator {
@@ -50,10 +59,22 @@ pub trait HTMLGenerator {
     fn write_close_tag(out: &mut String, tag: &str);
     fn write_raw_text(out: &mut String, text: &str);
 
+    fn write_comment(out: &mut String, comment: &str);
+    fn write_marker(out: &mut String, marker: &ObfuscatedExpr);
+    fn write_marker_pairs(out: &mut String, marker: &ObfuscatedExpr);
+
+    fn write_user_js_imports(out: &mut String, js: &str);
+    fn write_user_js(out: &mut String, js: &str);
+
+    fn write_plain_css(out: &mut String, css: &str);
+    fn write_scoped_css(out: &mut String, css: &str, scope_id: &str);
+
     fn inject_js(output: &mut CompilerOutput);
 }
 
-pub trait CSSGenerator {}
+pub trait CSSGenerator {
+    // fn write_plain
+}
 
 pub mod minify {
     use crate::compiler::codegen::types::{CSSGenerator, HTMLGenerator, JSGenerator};
@@ -77,19 +98,6 @@ where
     _phantom_data: PhantomData<M>,
 }
 
-// impl TryFrom<usize> for Box<dyn minify::MinifyLevel> {
-//     type Error = CompileError;
-
-//     fn try_from(value: usize) -> Result<Self, Self::Error> {
-//         match value {
-//             0 => Ok(Box::new(minify::None)),
-//             1 => Ok(Box::new(minify::Js)),
-//             2 => Ok(Box::new(minify::All)),
-//             _ => Err(CompileError::plain("Invalid minify level.")),
-//         }
-//     }
-// }
-
 impl<M: minify::MinifyLevel> Compiler<M> {
     pub fn new(edoc: ExtendedDocument) -> Self {
         Self {
@@ -104,12 +112,14 @@ impl CompilerOutput {
         Self {
             html: String::default(),
 
+            user_js_import: String::default(),
             scope_fragment_decleration: String::default(),
             var_declaration: String::default(),
             component_declaration: String::default(),
+            user_js: String::default(),
             js_event_element_decleration: String::default(),
             js_event_binding: String::default(),
-            var_binding: String::default(),
+            expr_binding: String::default(),
             component_initialization: String::default(),
 
             known_observables: HashSet::default(),
@@ -130,12 +140,14 @@ impl CompilerOutput {
 
     pub fn minified_js_build(&self) -> String {
         [
+            self.user_js_import.as_str(),
             self.scope_fragment_decleration.as_str(),
             self.var_declaration.as_str(),
             self.component_declaration.as_str(),
+            self.user_js.as_str(),
             self.js_event_element_decleration.as_str(),
             self.js_event_binding.as_str(),
-            self.var_binding.as_str(),
+            self.expr_binding.as_str(),
             self.component_initialization.as_str(),
         ]
         .into_iter()
@@ -146,12 +158,14 @@ impl CompilerOutput {
 
     pub fn build_js(&self) -> String {
         [
+            self.user_js_import.as_str(),
             self.scope_fragment_decleration.as_str(),
             self.var_declaration.as_str(),
             self.component_declaration.as_str(),
+            self.user_js.as_str(),
             self.js_event_element_decleration.as_str(),
             self.js_event_binding.as_str(),
-            self.var_binding.as_str(),
+            self.expr_binding.as_str(),
             self.component_initialization.as_str(),
         ]
         .into_iter()
@@ -251,7 +265,7 @@ impl<'a> HtmlEventList<'a> {
                 && EVENT_HANDLER_ATTR_NAMES.iter().any(|e| e.eq_ignore_ascii_case(&key_lower[6..]))
             {
                 events.push(HtmlEvent::new(&key[8..], event_body, true));
-            } else {
+            } else if key != HEML_ID_ATTRIBUTE_KEY && key != HEML_SCOPE_ATTRIBUTE_KEY {
                 physical_attrs.entry(key, val_str);
             }
         }
