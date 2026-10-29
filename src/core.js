@@ -184,28 +184,41 @@ function isMatch(val, pattern) {
 
 function If(markers, conditions) {
     let activeBranchIndex = -1;
+    let evaluationId = 0;
 
     const update = () => {
         if (!markers[0].isConnected && !markers[0].parentNode) return false;
+        const currentEvalId = ++evaluationId;
 
-        let matchedIndex = -1;
-        for (let i = 0; i < conditions.length; i++) {
-            if (conditions[i].condition()) {
-                matchedIndex = i;
-                break;
+        const evalConditions = async () => {
+            let matchedIndex = -1;
+            for (let i = 0; i < conditions.length; i++) {
+                let result = conditions[i].condition();
+
+                if (result instanceof Promise || (result && typeof result.then === "function")) {
+                    result = await result;
+                }
+
+                if (result) {
+                    matchedIndex = i;
+                    break;
+                }
             }
-        }
 
-        if (matchedIndex !== activeBranchIndex) {
-            ClearBetweenMarkers(markers);
+            if (currentEvalId !== evaluationId) return;
 
-            if (matchedIndex !== -1) {
-                const node = conditions[matchedIndex].evaluation();
-                PlaceBetweenMarkers(markers, node);
+            if (matchedIndex !== activeBranchIndex) {
+                ClearBetweenMarkers(markers);
+
+                if (matchedIndex !== -1) {
+                    const node = conditions[matchedIndex].evaluation();
+                    PlaceBetweenMarkers(markers, node);
+                }
+
+                activeBranchIndex = matchedIndex;
             }
-
-            activeBranchIndex = matchedIndex;
-        }
+        };
+        evalConditions();
 
         return true;
     };

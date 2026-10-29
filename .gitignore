@@ -1,5 +1,6 @@
 /target
-/examples
+/examples/*.html
+/examples/*/*.html
 /.hotplate
 
 *.lock

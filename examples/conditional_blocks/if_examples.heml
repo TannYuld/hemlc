@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <var name="IfCount" value="0"/>
+    There should be total of <value name="{IfCount}"/> visible if's!<br/>
+    (Expected amount is: 13)
+    <br/><br/><br/>
+
+    <!-- 
+        ====================================================
+        If block with constant value condition
+        ====================================================
+    -->
+    <if condition="true">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+    <!-- This is evaluated into if ("<string>") {...} so, it is true as long as it has a value. -->
+    <if condition="other_than_true">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+
+    <!-- 
+        ====================================================
+        If block with non-obserable expression condition 
+        ====================================================
+    -->
+    <if condition="{2 === 2}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+    <if condition="{2 === 3}">
+        Does not render!
+    </if>
+
+
+    <if condition="{'hello' === 'hello'}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+
+    <!-- 
+        ====================================================
+        If block with obserable expressions  
+        ====================================================
+    -->
+    <var name="nonChangingVar" value="{2}"/>
+    <var name="nonChangingVarBoolean" value="{false}"/>
+    <var name="changingVar" value="{99}"/>
+    <var name="varWithoutDefaultValue"/>
+    <var name="observableObjectVar" value="{{status: 200, message: 'Hello World'}}"/>
+
+    <if condition="{nonChangingVar.value === 2}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+    <if condition="{changingVar.value === 100}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+    <if condition="{!nonChangingVar.value}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <br/>
+        <script>IfCount.value++;</script>
+        <script>
+            changingVar.value += 1;
+        </script>
+    </if>
+
+
+    <if condition="{!nonChangingVar.value}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+    <if condition="{varWithoutDefaultValue}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+    <if condition="{observableObjectVar.value.status === 200}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+
+
+    <!-- 
+        ====================================================
+        If block with else branch
+        ====================================================
+    -->
+    <if condition="{2 === 3}">
+        Does not render!
+    </if>
+    <else>
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </else>
+
+
+    <if condition="{2 === 2}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+    <else>
+        Does not render!
+    </else>
+
+
+
+    <!-- 
+        ====================================================
+        If block with else-if branch
+        ====================================================
+    -->
+    <if condition="{2 === 3}">
+        Does not render!
+    </if>
+    <elseif condition="{2 === 2}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </elseif>
+
+
+    <if condition="{2 === 3}">
+        Does not render!
+    </if>
+    <elseif condition="{2 === 1}">
+        Does not render!
+    </elseif>
+
+
+    <if condition="{2 === 3}">
+        Does not render!
+    </if>
+    <elseif condition="{2 === 1}">
+        Does not render!
+    </elseif>
+    <elseif condition="{2 === 2}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </elseif>
+
+
+    <if condition="{2 === 2}">
+        Does render!
+        #<value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+    <elseif condition="{2 === 1}">
+        Does not render!
+    </elseif>
+    <elseif condition="{2 === 2}">
+        Does not render!
+    </elseif>
+
+
+
+    <!-- 
+        ====================================================
+        If block with stacked if-blocks
+        ====================================================
+    -->
+    <br/>
+    {<br/>
+    <if condition="{2 === 2}">
+        &nbsp;Stack level #1
+        <br/>
+        <if condition="{3 === 1}">
+            Does nothing!
+        </if>
+        <else>
+            &nbsp;&nbsp;Stack level #2
+            <br/>
+            <if condition="4 === 4">
+                &nbsp;&nbsp;&nbsp;Stack level #3
+                <br/>
+            </if>
+        </else>
+    </if>
+    }<br/><br/>
+
+
+
+    <!-- 
+        ====================================================
+        If block with other elements inside
+        ====================================================
+    -->
+    <if condition="{2 === 2}">
+        This is the current value of IfCount: <value name="{IfCount}" fixed/>
+        <script>IfCount.value++;</script>
+        <br/>
+    </if>
+</body>
+</html>

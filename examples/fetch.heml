@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <var name="sendingUser" value="{{username: document.getElementById('username').value, email: document.getElementById('email').value}}"/>
+    <var name="retrievedUser"/>
+    <var name="retrievedUserReq"/>
+    <div>
+        <input id="username" name="username"/>
+        <br/>
+        <input id="email" name="email"/>
+        <br/>
+        <button onclick="fetchUser()">Send User</button>
+    </div>
+
+    <br/>
+    <br/>
+
+    <if condition="{retrievedUserReq.value === 'loading'}">
+        Loading...
+    </if>
+    <elseif condition="{retrievedUserReq.value && retrievedUserReq.value.status === 200}">
+        Retrieved user:
+        <br/>
+        <br/>
+        Username: <value name="{retrievedUser.value.username}"/>
+        <br/>
+        Email: <value name="{retrievedUser.value.email}"/>
+        <br/>
+        <br/>
+        <br/>
+        <button onclick="
+            retrievedUserReq.value = undefined;
+            retrievedUser.value = undefined;
+        ">Clear user</button>
+    </elseif>
+
+    <script>
+        const url = "https://mockbase.org/api/echo?delay=2000";
+        document.getElementById('username').onchange = (event) => {
+            sendingUser.value.username = event.target.value;
+        }
+        document.getElementById('email').onchange = (event) => {
+            sendingUser.value.email = event.target.value;
+        }
+
+        async function fetchUser() {
+            retrievedUserReq.value = "loading";
+            const result = await fetch(url, {method: "POST", body: JSON.stringify(sendingUser.value)});
+            retrievedUser.value = (await result.json()).body;
+            retrievedUserReq.value = result;
+        }
+    </script>
+</body>
+</html>
